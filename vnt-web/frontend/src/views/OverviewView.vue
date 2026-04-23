@@ -8,6 +8,12 @@ import { formatBoolean } from '@/utils/format'
 
 const app = useAppStore()
 
+const serverConnection = computed(() => {
+  const servers = app.info.value.server_info
+  const connected = servers.filter((server) => server.connected).length
+  return `${connected} / ${servers.length}`
+})
+
 const featureItems = computed(() => [
   { label: '压缩', value: formatBoolean(app.info.value.compress) },
   { label: '重传', value: formatBoolean(app.info.value.rtx) },
@@ -29,11 +35,15 @@ const featureItems = computed(() => [
       />
     </section>
 
-    <SectionCard title="运行概况" subtitle="集中展示当前设备、隧道和公网信息。">
+    <SectionCard title="本机信息" subtitle="集中展示当前设备、隧道和公网信息。">
       <div class="kv-grid">
         <div class="kv-item">
           <span>设备名称</span>
           <strong>{{ app.info.value.name || '--' }}</strong>
+        </div>
+        <div class="kv-item">
+          <span>设备 ID</span>
+          <strong>{{ app.info.value.device_id || '--' }}</strong>
         </div>
         <div class="kv-item">
           <span>本机虚拟 IP</span>
@@ -46,6 +56,10 @@ const featureItems = computed(() => [
         <div class="kv-item">
           <span>NAT 类型</span>
           <strong>{{ app.info.value.nat_type || '--' }}</strong>
+        </div>
+        <div class="kv-item">
+          <span>服务器连接</span>
+          <strong>{{ serverConnection }}</strong>
         </div>
         <div class="kv-item">
           <span>公网 IPv4</span>

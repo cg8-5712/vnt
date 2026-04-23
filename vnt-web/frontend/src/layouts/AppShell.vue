@@ -12,18 +12,14 @@ const route = useRoute()
 const navItems = [
   { to: '/overview', label: '总览', hint: '状态与网络概况' },
   { to: '/configs', label: '配置', hint: '图形配置与文件配置' },
-  { to: '/peers', label: '设备', hint: '节点状态与流量' },
-  { to: '/routes', label: '路由', hint: '链路与候选路径' },
+  { to: '/peers', label: '设备', hint: '本机与节点状态' },
+  { to: '/routes', label: '路由', hint: '活动路由与服务器链路' },
 ]
 
 const serverSummary = computed(() => {
   const servers = app.info.value.server_info
-  if (servers.length === 0) {
-    return '未配置服务器'
-  }
-
   const connected = servers.filter((item) => item.connected).length
-  return `${connected} / ${servers.length} 已连接`
+  return `${connected} / ${servers.length}`
 })
 </script>
 
@@ -65,7 +61,7 @@ const serverSummary = computed(() => {
             {{ app.info.value.ip ? `${app.info.value.ip}/${app.info.value.prefix_len}` : '未分配虚拟 IP' }}
           </span>
           <span class="topbar-chip" :class="{ online: app.isServerConnected.value }">
-            {{ serverSummary }}
+            服务器连接 {{ serverSummary }}
           </span>
         </div>
 
