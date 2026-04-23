@@ -423,13 +423,13 @@ fn build_headers_for_path(path: &str) -> HeaderMap {
     let mut headers = HeaderMap::new();
 
     let is_gz = path.ends_with(".gz");
-
-    let mime = if is_gz {
-        let original = path.trim_end_matches(".gz");
-        from_path(original).first_or_octet_stream()
+    let original_path = if is_gz {
+        path.trim_end_matches(".gz")
     } else {
-        from_path(path).first_or_octet_stream()
+        path
     };
+
+    let mime = from_path(original_path).first_or_octet_stream();
     headers.insert(
         header::CONTENT_TYPE,
         HeaderValue::from_str(mime.as_ref()).unwrap(),
@@ -439,10 +439,12 @@ fn build_headers_for_path(path: &str) -> HeaderMap {
         headers.insert(header::CONTENT_ENCODING, HeaderValue::from_static("gzip"));
         headers.insert(header::VARY, HeaderValue::from_static("Accept-Encoding"));
     }
-    headers.insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=31536000, immutable"),
-    );
+    let cache_control = if original_path.ends_with(".html") {
+        "no-cache"
+    } else {
+        "public, max-age=31536000, immutable"
+    };
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(cache_control));
     headers
 }
 async fn static_handler(uri: Uri) -> impl IntoResponse {
@@ -455,8 +457,8 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
         && let Ok(content) = tokio::fs::read(&local_path).await
     {
         log::debug!("Serving file from local filesystem: {:?}", local_path);
-        let mime = from_path(&local_path).first_or_octet_stream();
-        return ([(header::CONTENT_TYPE, mime.as_ref())], content).into_response();
+        let headers = build_headers_for_path(path);
+        return (headers, content).into_response();
     }
 
     // 从内嵌数据中读取
