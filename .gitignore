@@ -3,3 +3,4 @@
 vnt_config
 vnt_current_config.txt
 logs/*
+data/config.toml
