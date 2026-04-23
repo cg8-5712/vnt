@@ -55,13 +55,6 @@ let startTimer: number | null = null
 let noticeTimer: number | null = null
 let autoCloseTimer: number | null = null
 
-function clearTimer(timer: number | null) {
-  if (timer !== null) {
-    window.clearInterval(timer)
-    window.clearTimeout(timer)
-  }
-}
-
 function setNotice(kind: NoticeKind, message: string, timeout = 3600) {
   notice.value = { kind, message }
   if (noticeTimer !== null) {
@@ -115,7 +108,7 @@ async function pollStartStatus() {
     if (status.status === 'running') {
       stopStartPolling()
       await fetchInfo()
-      setNotice('success', '组网已启动')
+      setNotice('success', '组网已启动。')
       scheduleLogAutoClose()
       return
     }
@@ -123,7 +116,7 @@ async function pollStartStatus() {
     if (status.status === 'stopped' && status.logs.length > 0) {
       stopStartPolling()
       await fetchInfo()
-      setNotice('error', '启动失败，请检查配置或网络状态', 5200)
+      setNotice('error', '启动失败，请检查配置和网络状态。', 5200)
     }
   } catch (error) {
     console.error(error)
@@ -180,7 +173,7 @@ async function stop({ keepLog = false }: { keepLog?: boolean } = {}) {
       showStartLog.value = false
     }
     await fetchInfo()
-    setNotice('info', '组网已停止')
+    setNotice('info', '组网已停止。')
   } catch (error) {
     setNotice('error', (error as Error).message, 4800)
   } finally {
@@ -206,7 +199,7 @@ async function restart(fileName: string) {
 async function cancelStart() {
   await stop({ keepLog: true })
   startStatus.value = 'stopped'
-  startLogs.value = [...startLogs.value, '启动已取消']
+  startLogs.value = [...startLogs.value, '启动已取消。']
 }
 
 function setPageVisible(visible: boolean) {

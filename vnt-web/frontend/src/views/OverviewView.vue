@@ -29,7 +29,7 @@ const featureItems = computed(() => [
       />
     </section>
 
-    <SectionCard title="运行概况" subtitle="把当前设备、隧道和公网信息集中放在一页。">
+    <SectionCard title="运行概况" subtitle="集中展示当前设备、隧道和公网信息。">
       <div class="kv-grid">
         <div class="kv-item">
           <span>设备名称</span>
@@ -60,13 +60,13 @@ const featureItems = computed(() => [
           <strong>{{ app.info.value.mtu ?? '--' }}</strong>
         </div>
         <div class="kv-item">
-          <span>当前配置</span>
+          <span>当前配置文件</span>
           <strong>{{ app.info.value.current_config_file || '--' }}</strong>
         </div>
       </div>
     </SectionCard>
 
-    <SectionCard title="服务器链路" subtitle="和控制节点的连接情况、版本与延迟。">
+    <SectionCard title="服务器链路" subtitle="控制节点的连接状态、版本和延迟。">
       <div v-if="app.info.value.server_info.length === 0" class="empty-state">
         还没有服务器信息。先到“配置”页保存并启动一个节点。
       </div>

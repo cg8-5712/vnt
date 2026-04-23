@@ -10,10 +10,10 @@ const app = useAppStore()
 const route = useRoute()
 
 const navItems = [
-  { to: '/overview', label: '总览', hint: '状态与概览' },
-  { to: '/configs', label: '配置', hint: '编辑与启停' },
-  { to: '/peers', label: '设备', hint: '节点与流量' },
-  { to: '/routes', label: '路由', hint: '链路明细' },
+  { to: '/overview', label: '总览', hint: '状态与网络概况' },
+  { to: '/configs', label: '配置', hint: '图形配置与文件配置' },
+  { to: '/peers', label: '设备', hint: '节点状态与流量' },
+  { to: '/routes', label: '路由', hint: '链路与候选路径' },
 ]
 
 const serverSummary = computed(() => {
@@ -34,7 +34,7 @@ const serverSummary = computed(() => {
         <div class="brand-mark">V</div>
         <div>
           <p>VNT Console</p>
-          <span>桌面控制台基座</span>
+          <span>新的 Web 控制台基座</span>
         </div>
       </div>
 
@@ -53,7 +53,7 @@ const serverSummary = computed(() => {
 
       <div class="sidebar-foot">
         <span>Version {{ app.info.value.version || '--' }}</span>
-        <span>{{ app.info.value.current_config_name || 'No Active Config' }}</span>
+        <span>{{ app.info.value.current_config_name || '当前没有活动配置' }}</span>
       </div>
     </aside>
 
@@ -62,7 +62,7 @@ const serverSummary = computed(() => {
         <div class="topbar-main">
           <StatusBadge :status="app.info.value.status" />
           <span class="topbar-chip">
-            {{ app.info.value.ip ? `${app.info.value.ip}/${app.info.value.prefix_len}` : '未分配 IP' }}
+            {{ app.info.value.ip ? `${app.info.value.ip}/${app.info.value.prefix_len}` : '未分配虚拟 IP' }}
           </span>
           <span class="topbar-chip" :class="{ online: app.isServerConnected.value }">
             {{ serverSummary }}
@@ -70,7 +70,7 @@ const serverSummary = computed(() => {
         </div>
 
         <div class="topbar-meta">
-          <span>{{ app.info.value.name || 'Unnamed Device' }}</span>
+          <span>{{ app.info.value.name || '未命名设备' }}</span>
           <span class="topbar-chip subtle">{{ shortDeviceId(app.info.value.device_id) }}</span>
         </div>
       </header>

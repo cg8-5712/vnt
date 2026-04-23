@@ -143,12 +143,12 @@ onUnmounted(() => {
 <template>
   <div class="page-grid">
     <section class="metrics-grid">
-      <MetricCard label="节点总数" :value="peers.length" hint="当前服务器可见节点" />
+      <MetricCard label="节点总数" :value="peers.length" hint="当前服务器可见节点数" />
       <MetricCard label="在线节点" :value="onlinePeers.length" hint="本地判定在线" />
       <MetricCard label="直连节点" :value="directPeers.length" hint="metric = 1" />
     </section>
 
-    <SectionCard title="设备与链路" subtitle="按在线优先排序，点击行可以看 NAT、流量和路由细节。">
+    <SectionCard title="设备与链路" subtitle="按在线优先排序，点击行可以展开 NAT、流量和路由细节。">
       <div v-if="sortedPeers.length === 0" class="empty-state">
         当前没有节点数据。确认 VNT 已启动并且能拉到服务器列表。
       </div>

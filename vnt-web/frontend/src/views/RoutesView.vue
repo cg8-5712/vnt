@@ -79,7 +79,7 @@ onUnmounted(() => {
       <MetricCard label="总路由数" :value="totalRoutes" hint="所有候选链路总和" />
     </section>
 
-    <SectionCard title="路由表" subtitle="按目标设备分组展示，便于后续直接接 Tauri 卡片或详情抽屉。">
+    <SectionCard title="路由表" subtitle="按目标设备分组展示，便于后续继续扩展到卡片或详情抽屉。">
       <div v-if="routes.length === 0" class="empty-state">
         当前没有路由数据。只有在节点已运行时才会持续拉取。
       </div>

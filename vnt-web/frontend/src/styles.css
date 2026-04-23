@@ -71,7 +71,8 @@ body::after {
 a,
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -80,7 +81,8 @@ button {
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 0.9rem;
@@ -93,7 +95,8 @@ textarea {
 }
 
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
   outline: none;
   border-color: rgba(124, 155, 255, 0.42);
   background: rgba(255, 255, 255, 0.045);
