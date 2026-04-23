@@ -16,6 +16,7 @@ use parking_lot::Mutex;
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::future::Future;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -338,6 +339,19 @@ pub async fn run_http_server(
     addr: SocketAddr,
     start_config_file_name: Option<PathBuf>,
 ) -> anyhow::Result<()> {
+    run_http_server_with_shutdown(addr, start_config_file_name, |_| {}, shutdown_signal()).await
+}
+
+pub async fn run_http_server_with_shutdown<S, R>(
+    addr: SocketAddr,
+    start_config_file_name: Option<PathBuf>,
+    ready: R,
+    shutdown: S,
+) -> anyhow::Result<()>
+where
+    S: Future<Output = ()> + Send + 'static,
+    R: FnOnce(SocketAddr) + Send + 'static,
+{
     fs::create_dir_all(CONFIG_DIR)
         .await
         .context("Failed to create config directory")?;
@@ -383,10 +397,12 @@ pub async fn run_http_server(
         .with_state(state)
         .fallback(static_handler);
 
-    log::info!("HTTP API Listening on http://{}", addr);
     let listener = TcpListener::bind(addr).await?;
+    let local_addr = listener.local_addr()?;
+    ready(local_addr);
+    log::info!("HTTP API Listening on http://{}", local_addr);
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(shutdown)
         .await?;
 
     Ok(())
@@ -444,7 +460,10 @@ fn build_headers_for_path(path: &str) -> HeaderMap {
     } else {
         "public, max-age=31536000, immutable"
     };
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(cache_control));
+    headers.insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static(cache_control),
+    );
     headers
 }
 async fn static_handler(uri: Uri) -> impl IntoResponse {
