@@ -22,6 +22,15 @@ ipnet = { version = "2.11", features = ["serde"] }
 
 route_manager = "0.2.11"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_Threading",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
 [features]
 default = []
 vnt-ipc = ["dep:vnt-ipc"]
