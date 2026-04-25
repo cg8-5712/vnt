@@ -4,10 +4,14 @@ use std::os::windows::ffi::OsStrExt;
 
 use anyhow::{Context, anyhow};
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, HWND};
-use windows_sys::Win32::Security::{GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation};
+use windows_sys::Win32::Security::{
+    GetTokenInformation, TOKEN_ELEVATION, TOKEN_QUERY, TokenElevation,
+};
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 use windows_sys::Win32::UI::Shell::ShellExecuteW;
-use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW, SW_SHOWNORMAL};
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    MB_ICONERROR, MB_OK, MessageBoxW, SW_SHOWNORMAL,
+};
 
 pub fn ensure_elevated_for_tun() -> anyhow::Result<bool> {
     if is_elevated_process()? {

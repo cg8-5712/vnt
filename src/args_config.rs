@@ -1,4 +1,4 @@
-﻿use anyhow::anyhow;
+use anyhow::anyhow;
 use clap::Parser;
 use ipnet::Ipv4Net;
 use serde::{Deserialize, Serialize};
@@ -499,4 +499,3 @@ server = ["quic://1.2.3.4:29872"]
         Ok(())
     }
 }
-

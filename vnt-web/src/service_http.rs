@@ -513,8 +513,8 @@ async fn start_vnt_internal(
         .with_context(|| format!("配置文件不存在: {:?}", file_path))?;
 
     state.record_log("解析配置文件内容");
-    let cfg: StartConfig = toml::from_str(&content)
-        .with_context(|| "配置文件格式错误，请检查TOML语法")?;
+    let cfg: StartConfig =
+        toml::from_str(&content).with_context(|| "配置文件格式错误，请检查TOML语法")?;
 
     let config_display_name = cfg.config_name.clone().unwrap_or_else(|| file_name.clone());
     let core_config = convert_config(cfg)?;
