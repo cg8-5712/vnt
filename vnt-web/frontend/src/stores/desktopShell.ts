@@ -8,6 +8,8 @@ type DesktopShellInfo = {
   customTitlebar: boolean
 }
 
+type CloseRequestOutcome = 'ignored' | 'prompt' | 'minimized_to_tray' | 'closed'
+
 const runtimeAvailable = ref(false)
 const customTitlebarEnabled = ref(false)
 const closePromptVisible = ref(false)
@@ -108,7 +110,16 @@ async function requestCloseWindow() {
     return
   }
 
-  await tauriInvoke('request_close_window')
+  try {
+    const outcome = await tauriInvoke<CloseRequestOutcome>('request_close_window')
+
+    if (outcome === 'prompt') {
+      rememberCloseChoice.value = false
+      closePromptVisible.value = true
+    }
+  } catch (error) {
+    console.error(error)
+  }
 }
 
 async function cancelClosePrompt() {
@@ -133,7 +144,11 @@ async function resolveClosePrompt(action: CloseDecision) {
     return
   }
 
-  await tauriInvoke('resolve_close_request', { action, remember })
+  try {
+    await tauriInvoke('resolve_close_request', { action, remember })
+  } catch (error) {
+    console.error(error)
+  }
 }
 
 export function useDesktopShellStore() {

@@ -77,6 +77,15 @@ enum CloseDecision {
     Close,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum CloseRequestOutcome {
+    Ignored,
+    Prompt,
+    MinimizedToTray,
+    Closed,
+}
+
 impl From<CloseDecision> for CloseBehavior {
     fn from(value: CloseDecision) -> Self {
         match value {
@@ -378,17 +387,23 @@ fn handle_close_request(
     window: &tauri::Window,
     app: &AppHandle,
     shell_state: &DesktopShellState,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<CloseRequestOutcome> {
     if shell_state.is_exiting() {
-        return Ok(());
+        return Ok(CloseRequestOutcome::Ignored);
     }
 
     match shell_state.close_behavior() {
-        CloseBehavior::Ask => emit_close_prompt(window, shell_state),
-        CloseBehavior::MinimizeToTray => hide_window_to_tray(window),
+        CloseBehavior::Ask => {
+            emit_close_prompt(window, shell_state)?;
+            Ok(CloseRequestOutcome::Prompt)
+        }
+        CloseBehavior::MinimizeToTray => {
+            hide_window_to_tray(window)?;
+            Ok(CloseRequestOutcome::MinimizedToTray)
+        }
         CloseBehavior::Close => {
             exit_application(app, shell_state);
-            Ok(())
+            Ok(CloseRequestOutcome::Closed)
         }
     }
 }
@@ -509,7 +524,7 @@ fn request_close_window(
     window: tauri::Window,
     app: AppHandle,
     shell_state: State<'_, DesktopShellState>,
-) -> Result<(), String> {
+) -> Result<CloseRequestOutcome, String> {
     handle_close_request(&window, &app, shell_state.inner()).map_err(|e| e.to_string())
 }
 

@@ -4,6 +4,13 @@ type TauriEvent<T> = {
 
 type TauriUnlisten = () => void
 
+type TauriWindowHandle = {
+  listen: <T>(
+    eventName: string,
+    handler: (event: TauriEvent<T>) => void,
+  ) => Promise<TauriUnlisten>
+}
+
 type TauriGlobal = {
   core: {
     invoke: <T>(command: string, args?: Record<string, unknown>) => Promise<T>
@@ -13,6 +20,9 @@ type TauriGlobal = {
       eventName: string,
       handler: (event: TauriEvent<T>) => void,
     ) => Promise<TauriUnlisten>
+  }
+  window?: {
+    getCurrentWindow: () => TauriWindowHandle
   }
 }
 
@@ -44,6 +54,14 @@ export async function tauriListen<T>(
   handler: (payload: T) => void,
 ) {
   const tauri = window.__TAURI__
+
+  const currentWindow = tauri?.window?.getCurrentWindow?.()
+
+  if (currentWindow?.listen) {
+    return currentWindow.listen<T>(eventName, (event) => {
+      handler(event.payload)
+    })
+  }
 
   if (!tauri?.event?.listen) {
     throw new Error('Tauri event API unavailable')
