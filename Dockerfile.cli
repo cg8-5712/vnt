@@ -16,7 +16,7 @@ COPY vnt-ipc ./vnt-ipc
 COPY vnt-jni ./vnt-jni
 COPY vnt-web ./vnt-web
 
-RUN cargo build --release --locked --bin vnt2_web --features vnt-web
+RUN cargo build --release --locked --bin vnt2_cli --features vnt-ipc
 
 FROM debian:bookworm-slim AS runtime
 
@@ -26,10 +26,8 @@ RUN apt-get update \
 
 WORKDIR /app/data
 
-COPY --from=builder /build/target/release/vnt2_web /usr/local/bin/vnt2_web
+COPY --from=builder /build/target/release/vnt2_cli /usr/local/bin/vnt2_cli
 
 VOLUME ["/app/data"]
 
-EXPOSE 19099/tcp
-
-CMD ["vnt2_web", "--addr", "0.0.0.0:19099"]
+CMD ["vnt2_cli", "--conf", "/app/data/config.toml"]

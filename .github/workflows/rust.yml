@@ -109,7 +109,6 @@ jobs:
             export CARGO_TERM_COLOR=always
             cargo build --release --verbose --bin vnt2_web --features vnt-web --target $TARGET
             cargo build --release --verbose --bin vnt2_cli --features vnt-ipc --target $TARGET
-            cargo build --release --verbose --bin vnt2_ctrl --features vnt-ipc --target $TARGET
       - name: Install and configure dependencies
         if: ${{ ! endsWith(matrix.TARGET, 'freebsd') }}
         run: |
@@ -218,11 +217,9 @@ jobs:
           if [[ $TARGET =~ ^mips.*$ ]]; then
             cargo +nightly build --release --verbose --target $TARGET -Z build-std=std,panic_abort --bin vnt2_web --features vnt-web
             cargo +nightly build --release --verbose --target $TARGET -Z build-std=std,panic_abort --bin vnt2_cli --features vnt-ipc
-            cargo +nightly build --release --verbose --target $TARGET -Z build-std=std,panic_abort --bin vnt2_ctrl --features vnt-ipc
           else
             cargo build --release --verbose --target $TARGET --bin vnt2_web --features vnt-web
             cargo build --release --verbose --target $TARGET --bin vnt2_cli --features vnt-ipc
-            cargo build --release --verbose --target $TARGET --bin vnt2_ctrl --features vnt-ipc
           fi
           ldd ./target/$TARGET/release/vnt2_web || true
           file ./target/$TARGET/release/vnt2_web || true
@@ -231,26 +228,30 @@ jobs:
       - name: Package
         run: |
           mkdir -p ./artifacts
-          mkdir -p ./package
+          mkdir -p ./package/web
+          mkdir -p ./package/cli
           if [[ $GITHUB_REF_TYPE =~ ^tag$ ]]; then
             TAG=$GITHUB_REF_NAME
           else
             TAG=$GITHUB_SHA
           fi
-          ZIP_NAME="vnt2-${TARGET}-${TAG}.zip"
+          WEB_ZIP_NAME="vnt2_web-${TARGET}-${TAG}.zip"
+          CLI_ZIP_NAME="vnt2_cli-${TARGET}-${TAG}.zip"
 
           if [[ $OS =~ ^windows.*$ ]]; then
-              cp ./target/$TARGET/release/vnt2_web.exe ./package/
-              cp ./target/$TARGET/release/vnt2_cli.exe ./package/
-              cp ./target/$TARGET/release/vnt2_ctrl.exe ./package/
-              cd ./package
-              7z a -tzip "../artifacts/$ZIP_NAME" ./*
+              cp ./target/$TARGET/release/vnt2_web.exe ./package/web/
+              cp ./target/$TARGET/release/vnt2_cli.exe ./package/cli/
+              cd ./package/web
+              7z a -tzip "../../artifacts/$WEB_ZIP_NAME" ./*
+              cd ../cli
+              7z a -tzip "../../artifacts/$CLI_ZIP_NAME" ./*
           else
-              cp ./target/$TARGET/release/vnt2_web ./package/
-              cp ./target/$TARGET/release/vnt2_cli ./package/
-              cp ./target/$TARGET/release/vnt2_ctrl ./package/
-              cd ./package
-              zip "../artifacts/$ZIP_NAME" ./*
+              cp ./target/$TARGET/release/vnt2_web ./package/web/
+              cp ./target/$TARGET/release/vnt2_cli ./package/cli/
+              cd ./package/web
+              zip "../../artifacts/$WEB_ZIP_NAME" ./*
+              cd ../cli
+              zip "../../artifacts/$CLI_ZIP_NAME" ./*
           fi
       - name: List target Vnt
         run: find ./artifacts
@@ -260,10 +261,150 @@ jobs:
           name: Vnt-${{ matrix.TARGET }}
           path: |
             ./artifacts/*
+  app:
+    name: App ${{ matrix.NAME }}
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ${{ matrix.OS }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - NAME: linux-x64
+            OS: ubuntu-22.04
+          - NAME: windows-x64
+            OS: windows-2022
+          - NAME: macos-x64
+            OS: macos-13
+          - NAME: macos-arm64
+            OS: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+          cache-dependency-path: |
+            vnt-app/yarn.lock
+            vnt-web/frontend/yarn.lock
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm
+      - name: Install Protobuf (MacOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+      - name: Install Protobuf (Windows)
+        if: runner.os == 'Windows'
+        run: choco install protoc
+      - name: Use strawberry perl
+        if: runner.os == 'Windows'
+        run: echo OPENSSL_SRC_PERL=C:/Strawberry/perl/bin/perl >> $GITHUB_ENV
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Install frontend dependencies
+        run: yarn --cwd vnt-web/frontend install --frozen-lockfile
+      - name: Install app dependencies
+        run: yarn --cwd vnt-app install --frozen-lockfile
+      - name: Build desktop app
+        run: yarn --cwd vnt-app build
+      - name: Collect app artifacts
+        run: |
+          mkdir -p ./release-files
+          find ./vnt-app/src-tauri/target/release/bundle -type f \
+            \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.msi' -o -name '*-setup.exe' -o -name '*.dmg' -o -name '*.app.tar.gz' \) \
+            -exec cp "{}" ./release-files/ \;
+
+          if [[ -z "$(find ./release-files -type f -print -quit)" ]]; then
+            echo "No app bundle files found" >&2
+            exit 1
+          fi
+
+          find ./release-files -type f -print
+      - name: Archive app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vnt-app-${{ matrix.NAME }}
+          path: |
+            ./release-files/*
+  docker:
+    name: Docker ${{ matrix.IMAGE_NAME }}
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - IMAGE_NAME: vnt_cli
+            DOCKERFILE: Dockerfile.cli
+          - IMAGE_NAME: vnt_web
+            DOCKERFILE: Dockerfile
+    env:
+      DOCKERHUB_NAMESPACE: ${{ vars.DOCKERHUB_NAMESPACE || secrets.DOCKERHUB_USERNAME }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Prepare image tags
+        id: prep
+        env:
+          IMAGE_NAME: ${{ matrix.IMAGE_NAME }}
+        run: |
+          if [[ -z "$DOCKERHUB_NAMESPACE" ]]; then
+            echo "vars.DOCKERHUB_NAMESPACE or secrets.DOCKERHUB_USERNAME must be set" >&2
+            exit 1
+          fi
+
+          GHCR_NAMESPACE="${GITHUB_REPOSITORY_OWNER,,}"
+          DOCKERHUB_NAMESPACE="${DOCKERHUB_NAMESPACE,,}"
+
+          {
+            echo "tags<<EOF"
+            echo "ghcr.io/${GHCR_NAMESPACE}/${IMAGE_NAME}:${GITHUB_REF_NAME}"
+            echo "docker.io/${DOCKERHUB_NAMESPACE}/${IMAGE_NAME}:${GITHUB_REF_NAME}"
+            if [[ "$GITHUB_REF_NAME" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "ghcr.io/${GHCR_NAMESPACE}/${IMAGE_NAME}:latest"
+              echo "docker.io/${DOCKERHUB_NAMESPACE}/${IMAGE_NAME}:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - name: Build and push ${{ matrix.IMAGE_NAME }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.DOCKERFILE }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.prep.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+          cache-from: type=gha,scope=${{ matrix.IMAGE_NAME }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.IMAGE_NAME }}
   # deploys to github releases on tag
   deploy:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: build
+    needs:
+      - build
+      - app
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
@@ -276,7 +417,7 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN  }}
-          file: ./artifacts/*/*.zip
+          file: ./artifacts/**/*.*
           tag: ${{ github.ref }}
           overwrite: true
           file_glob: true

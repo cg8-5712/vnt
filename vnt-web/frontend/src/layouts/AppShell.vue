@@ -34,21 +34,20 @@ const activeNavItem = computed(
     <header
       class="window-header panel"
       :class="{ 'is-desktop-shell': desktopShell.customTitlebarEnabled.value }"
-      data-tauri-drag-region
     >
       <div
         class="window-drag-zone"
         data-tauri-drag-region
         @dblclick="desktopShell.toggleMaximizeWindow"
       >
-        <div class="window-mark">V</div>
+        <div class="window-mark" data-tauri-drag-region>V</div>
 
-        <div class="window-copy">
+        <div class="window-copy" data-tauri-drag-region>
           <strong>{{ activeNavItem.label }}</strong>
           <span>{{ activeNavItem.hint }}</span>
         </div>
 
-        <div class="window-status">
+        <div class="window-status" data-tauri-drag-region>
           <StatusBadge :status="app.info.value.status" />
           <span class="topbar-chip">
             {{ app.info.value.ip ? `${app.info.value.ip}/${app.info.value.prefix_len}` : '未分配虚拟 IP' }}
@@ -59,7 +58,11 @@ const activeNavItem = computed(
         </div>
       </div>
 
-      <div class="window-meta">
+      <div
+        class="window-meta"
+        data-tauri-drag-region
+        @dblclick="desktopShell.toggleMaximizeWindow"
+      >
         <span>{{ app.info.value.name || '未命名设备' }}</span>
         <span class="topbar-chip subtle">{{ shortDeviceId(app.info.value.device_id) }}</span>
       </div>
@@ -67,7 +70,7 @@ const activeNavItem = computed(
       <div v-if="desktopShell.customTitlebarEnabled.value" class="window-actions">
         <button
           type="button"
-          class="window-action"
+          class="window-action minimize"
           aria-label="最小化"
           title="最小化"
           @click="desktopShell.minimizeWindow"
@@ -79,7 +82,7 @@ const activeNavItem = computed(
 
         <button
           type="button"
-          class="window-action"
+          class="window-action maximize"
           :aria-label="desktopShell.maximized.value ? '还原' : '最大化'"
           :title="desktopShell.maximized.value ? '还原' : '最大化'"
           @click="desktopShell.toggleMaximizeWindow"
@@ -160,7 +163,7 @@ const activeNavItem = computed(
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 1rem;
-  padding: 0.8rem 0.8rem 0.8rem 1rem;
+  padding: 0.82rem 0.82rem 0.82rem 1rem;
 }
 
 .window-header.is-desktop-shell {
@@ -175,18 +178,20 @@ const activeNavItem = computed(
   width: 100%;
 }
 
-.window-header.is-desktop-shell .window-drag-zone {
-  cursor: grab;
+.window-header.is-desktop-shell .window-drag-zone,
+.window-header.is-desktop-shell .window-meta {
+  cursor: move;
+  user-select: none;
 }
 
 .window-mark {
   display: grid;
-  width: 2.6rem;
-  height: 2.6rem;
+  width: 2.65rem;
+  height: 2.65rem;
   flex: none;
   place-items: center;
-  border-radius: 0.95rem;
-  background: linear-gradient(140deg, rgba(66, 199, 154, 0.9), rgba(124, 155, 255, 0.92));
+  border-radius: 0.98rem;
+  background: linear-gradient(140deg, rgba(66, 199, 154, 0.92), rgba(124, 155, 255, 0.95));
   color: #04121d;
   font-size: 1.08rem;
   font-weight: 900;
@@ -234,61 +239,93 @@ const activeNavItem = computed(
   color: var(--text-soft);
 }
 
-.window-header.is-desktop-shell .window-mark,
-.window-header.is-desktop-shell .window-copy,
-.window-header.is-desktop-shell .window-copy *,
-.window-header.is-desktop-shell .window-status,
-.window-header.is-desktop-shell .window-status *,
-.window-header.is-desktop-shell .window-meta,
-.window-header.is-desktop-shell .window-meta * {
+.window-header.is-desktop-shell .window-copy > *,
+.window-header.is-desktop-shell .window-status > *,
+.window-header.is-desktop-shell .window-meta > * {
   pointer-events: none;
 }
 
 .window-actions {
   display: flex;
   align-items: center;
-  gap: 0.2rem;
+  gap: 0.45rem;
+  padding-left: 0.2rem;
 }
 
 .window-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.3rem;
-  height: 2.1rem;
-  border: 0;
-  border-radius: 0.8rem;
-  background: transparent;
-  color: var(--text-main);
+  width: 2.85rem;
+  height: 2.42rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.92rem;
+  background: linear-gradient(180deg, rgba(20, 35, 55, 0.98), rgba(10, 19, 31, 0.98));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 10px 24px rgba(0, 0, 0, 0.22);
+  color: #edf5ff;
   transition:
     background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
     color 160ms ease,
     transform 160ms ease;
 }
 
 .window-action:hover {
-  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.26);
+  background: linear-gradient(180deg, rgba(29, 47, 72, 1), rgba(14, 24, 40, 1));
   transform: translateY(-1px);
 }
 
+.window-action:active {
+  transform: translateY(0);
+}
+
+.window-action.minimize {
+  color: #e8eef9;
+}
+
+.window-action.maximize {
+  border-color: rgba(124, 155, 255, 0.28);
+  background: linear-gradient(180deg, rgba(40, 62, 95, 0.98), rgba(15, 27, 48, 0.98));
+  color: #d4e0ff;
+}
+
+.window-action.maximize:hover {
+  border-color: rgba(124, 155, 255, 0.44);
+  background: linear-gradient(180deg, rgba(57, 84, 124, 1), rgba(23, 39, 65, 1));
+}
+
+.window-action.close {
+  border-color: rgba(239, 90, 90, 0.36);
+  background: linear-gradient(180deg, rgba(123, 35, 35, 0.98), rgba(73, 16, 16, 0.98));
+  color: #ffd7d7;
+}
+
 .window-action.close:hover {
-  background: rgba(239, 90, 90, 0.18);
-  color: #ffb3b3;
+  border-color: rgba(255, 132, 132, 0.56);
+  background: linear-gradient(180deg, rgba(164, 44, 44, 1), rgba(101, 20, 20, 1));
+  color: #fff1f1;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 12px 28px rgba(105, 10, 10, 0.34);
 }
 
 .window-action svg {
-  width: 1rem;
-  height: 1rem;
+  width: 1.08rem;
+  height: 1.08rem;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.5;
+  stroke-width: 1.85;
 }
 
 .sidebar {
   display: flex;
-  min-height: calc(100vh - 6.35rem);
+  min-height: calc(100vh - 6.4rem);
   flex-direction: column;
   gap: 1.5rem;
 }
@@ -447,6 +484,7 @@ const activeNavItem = computed(
 
   .window-actions {
     justify-content: flex-end;
+    padding-left: 0;
   }
 }
 
@@ -456,7 +494,12 @@ const activeNavItem = computed(
   }
 
   .window-copy {
-    width: calc(100% - 3.55rem);
+    width: calc(100% - 3.6rem);
+  }
+
+  .window-action {
+    width: 2.7rem;
+    height: 2.32rem;
   }
 }
 </style>
