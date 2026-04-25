@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
 
+import CloseConfirmDialog from '@/components/CloseConfirmDialog.vue'
 import StartLogModal from '@/components/StartLogModal.vue'
 import AppShell from '@/layouts/AppShell.vue'
 import { useAppStore } from '@/stores/app'
+import { useDesktopShellStore } from '@/stores/desktopShell'
 
 const app = useAppStore()
+const desktopShell = useDesktopShellStore()
 
 function handleVisibility() {
   app.setPageVisible(!document.hidden)
@@ -13,11 +16,12 @@ function handleVisibility() {
 
 onMounted(() => {
   document.addEventListener('visibilitychange', handleVisibility)
-  void app.bootstrap()
+  void Promise.all([app.bootstrap(), desktopShell.bootstrap()])
 })
 
 onUnmounted(() => {
   document.removeEventListener('visibilitychange', handleVisibility)
+  desktopShell.dispose()
 })
 </script>
 
@@ -29,6 +33,7 @@ onUnmounted(() => {
   </div>
 
   <StartLogModal />
+  <CloseConfirmDialog />
 </template>
 
 <style scoped>
