@@ -27,27 +27,101 @@ const serverSummary = computed(() => {
 const activeNavItem = computed(
   () => navItems.find((item) => item.to === route.path) ?? navItems[0],
 )
+
+function handleTitlebarMouseDown(event: MouseEvent) {
+  // 只在左键点击且不是按钮时触发拖动
+  if (event.button !== 0) return
+
+  const target = event.target as HTMLElement
+  // 如果点击的是按钮或按钮内的元素，不触发拖动
+  if (target.closest('.titlebar-actions')) return
+
+  desktopShell.startDragging()
+}
 </script>
 
 <template>
   <div class="app-shell">
     <header
-      class="window-header panel"
+      class="window-header"
       :class="{ 'is-desktop-shell': desktopShell.customTitlebarEnabled.value }"
     >
       <div
-        class="window-drag-zone"
-        data-tauri-drag-region
-        @dblclick="desktopShell.toggleMaximizeWindow"
+        v-if="desktopShell.customTitlebarEnabled.value"
+        class="titlebar"
+        @mousedown="handleTitlebarMouseDown"
       >
-        <div class="window-mark" data-tauri-drag-region>V</div>
-
-        <div class="window-copy" data-tauri-drag-region>
-          <strong>{{ activeNavItem.label }}</strong>
-          <span>{{ activeNavItem.hint }}</span>
+        <div class="titlebar-left">
+          <div class="app-icon">V</div>
+          <div class="app-title">
+            <span class="title-main">VNT Console</span>
+            <span class="title-sub">{{ activeNavItem.label }}</span>
+          </div>
         </div>
 
-        <div class="window-status" data-tauri-drag-region>
+        <div class="titlebar-center">
+          <div>
+            <StatusBadge :status="app.info.value.status" />
+          </div>
+          <span class="status-chip">
+            {{ app.info.value.ip ? `${app.info.value.ip}/${app.info.value.prefix_len}` : '未分配IP' }}
+          </span>
+          <span class="status-chip" :class="{ connected: app.isServerConnected.value }">
+            {{ serverSummary }} 服务器
+          </span>
+        </div>
+
+        <div class="titlebar-actions">
+          <button
+            type="button"
+            class="titlebar-btn minimize"
+            aria-label="最小化"
+            @click="desktopShell.minimizeWindow"
+          >
+            <svg viewBox="0 0 12 12">
+              <line x1="2" y1="6" x2="10" y2="6" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            class="titlebar-btn maximize"
+            :aria-label="desktopShell.maximized.value ? '还原' : '最大化'"
+            @click="desktopShell.toggleMaximizeWindow"
+          >
+            <svg v-if="desktopShell.maximized.value" viewBox="0 0 12 12">
+              <rect x="3" y="2" width="7" height="7" />
+              <polyline points="2,3 2,10 9,10" />
+            </svg>
+            <svg v-else viewBox="0 0 12 12">
+              <rect x="2.5" y="2.5" width="7" height="7" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            class="titlebar-btn close"
+            aria-label="关闭"
+            @click="desktopShell.requestCloseWindow"
+          >
+            <svg viewBox="0 0 12 12">
+              <line x1="3" y1="3" x2="9" y2="9" />
+              <line x1="9" y1="3" x2="3" y2="9" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div v-else class="header-content panel">
+        <div class="header-left">
+          <div class="window-mark">V</div>
+          <div class="window-copy">
+            <strong>{{ activeNavItem.label }}</strong>
+            <span>{{ activeNavItem.hint }}</span>
+          </div>
+        </div>
+
+        <div class="header-status">
           <StatusBadge :status="app.info.value.status" />
           <span class="topbar-chip">
             {{ app.info.value.ip ? `${app.info.value.ip}/${app.info.value.prefix_len}` : '未分配虚拟 IP' }}
@@ -56,58 +130,11 @@ const activeNavItem = computed(
             服务器连接 {{ serverSummary }}
           </span>
         </div>
-      </div>
 
-      <div
-        class="window-meta"
-        data-tauri-drag-region
-        @dblclick="desktopShell.toggleMaximizeWindow"
-      >
-        <span>{{ app.info.value.name || '未命名设备' }}</span>
-        <span class="topbar-chip subtle">{{ shortDeviceId(app.info.value.device_id) }}</span>
-      </div>
-
-      <div v-if="desktopShell.customTitlebarEnabled.value" class="window-actions">
-        <button
-          type="button"
-          class="window-action minimize"
-          aria-label="最小化"
-          title="最小化"
-          @click="desktopShell.minimizeWindow"
-        >
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M3 8.5h10" />
-          </svg>
-        </button>
-
-        <button
-          type="button"
-          class="window-action maximize"
-          :aria-label="desktopShell.maximized.value ? '还原' : '最大化'"
-          :title="desktopShell.maximized.value ? '还原' : '最大化'"
-          @click="desktopShell.toggleMaximizeWindow"
-        >
-          <svg v-if="desktopShell.maximized.value" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M5 3.5h7v7" />
-            <path d="M4 5.5h7v7H4z" />
-          </svg>
-          <svg v-else viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4 4.5h8v8H4z" />
-          </svg>
-        </button>
-
-        <button
-          type="button"
-          class="window-action close"
-          aria-label="关闭"
-          title="关闭"
-          @click="desktopShell.requestCloseWindow"
-        >
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4 4l8 8" />
-            <path d="M12 4L4 12" />
-          </svg>
-        </button>
+        <div class="header-meta">
+          <span>{{ app.info.value.name || '未命名设备' }}</span>
+          <span class="topbar-chip subtle">{{ shortDeviceId(app.info.value.device_id) }}</span>
+        </div>
       </div>
     </header>
 
@@ -154,34 +181,169 @@ const activeNavItem = computed(
   grid-template-rows: auto 1fr;
   gap: 1.1rem 1.25rem;
   min-height: 100vh;
-  padding: 0.85rem 1.25rem 1.25rem;
+  padding: 0 1.25rem 1.25rem;
 }
 
 .window-header {
   grid-column: 1 / -1;
+}
+
+.window-header.is-desktop-shell {
+  margin: 0 -1.25rem;
+  padding: 0;
+}
+
+/* Custom Titlebar Styles */
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 2.5rem;
+  background: linear-gradient(180deg, rgba(8, 18, 32, 0.95), rgba(5, 12, 22, 0.98));
+  border-bottom: 1px solid rgba(124, 155, 255, 0.12);
+  backdrop-filter: blur(12px);
+  user-select: none;
+  cursor: default;
+}
+
+.titlebar:active {
+  cursor: move;
+}
+
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding-left: 0.75rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.app-icon {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.45rem;
+  background: linear-gradient(135deg, #42c79a, #7c9bff);
+  color: #04121d;
+  font-size: 0.85rem;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.app-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+  font-size: 0.8rem;
+}
+
+.title-main {
+  color: #e8f0ff;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.title-sub {
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.titlebar-center {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 1rem;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 1.65rem;
+  padding: 0 0.6rem;
+  border-radius: 0.4rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.status-chip.connected {
+  background: rgba(66, 199, 154, 0.08);
+  border-color: rgba(66, 199, 154, 0.2);
+  color: #8bf1c5;
+}
+
+.titlebar-actions {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  flex-shrink: 0;
+}
+
+.titlebar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.titlebar-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.titlebar-btn:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.titlebar-btn.close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+.titlebar-btn.close:active {
+  background: #c50b1c;
+}
+
+.titlebar-btn svg {
+  width: 0.75rem;
+  height: 0.75rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Non-desktop header styles */
+.header-content {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 1rem;
-  padding: 0.82rem 0.82rem 0.82rem 1rem;
+  padding: 0.82rem 1rem;
 }
 
-.window-header.is-desktop-shell {
-  border-color: rgba(124, 155, 255, 0.18);
-}
-
-.window-drag-zone {
+.header-left {
   display: flex;
   align-items: center;
   gap: 0.95rem;
   min-width: 0;
-  width: 100%;
-}
-
-.window-header.is-desktop-shell .window-drag-zone,
-.window-header.is-desktop-shell .window-meta {
-  cursor: move;
-  user-select: none;
 }
 
 .window-mark {
@@ -221,106 +383,43 @@ const activeNavItem = computed(
   font-size: 0.88rem;
 }
 
-.window-status,
-.window-meta {
+.header-status,
+.header-meta {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   min-width: 0;
 }
 
-.window-status {
+.header-status {
   overflow: auto hidden;
   padding-bottom: 0.1rem;
 }
 
-.window-meta {
+.header-meta {
   justify-content: flex-end;
   color: var(--text-soft);
 }
 
-.window-header.is-desktop-shell .window-copy > *,
-.window-header.is-desktop-shell .window-status > *,
-.window-header.is-desktop-shell .window-meta > * {
-  pointer-events: none;
-}
-
-.window-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding-left: 0.2rem;
-}
-
-.window-action {
+.topbar-chip {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 2.85rem;
-  height: 2.42rem;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 0.92rem;
-  background: linear-gradient(180deg, rgba(20, 35, 55, 0.98), rgba(10, 19, 31, 0.98));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 10px 24px rgba(0, 0, 0, 0.22);
-  color: #edf5ff;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    color 160ms ease,
-    transform 160ms ease;
+  gap: 0.35rem;
+  min-height: 2.15rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.52rem 0.82rem;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.9rem;
+  white-space: nowrap;
 }
 
-.window-action:hover {
-  border-color: rgba(255, 255, 255, 0.26);
-  background: linear-gradient(180deg, rgba(29, 47, 72, 1), rgba(14, 24, 40, 1));
-  transform: translateY(-1px);
+.topbar-chip.online {
+  color: #8bf1c5;
 }
 
-.window-action:active {
-  transform: translateY(0);
-}
-
-.window-action.minimize {
-  color: #e8eef9;
-}
-
-.window-action.maximize {
-  border-color: rgba(124, 155, 255, 0.28);
-  background: linear-gradient(180deg, rgba(40, 62, 95, 0.98), rgba(15, 27, 48, 0.98));
-  color: #d4e0ff;
-}
-
-.window-action.maximize:hover {
-  border-color: rgba(124, 155, 255, 0.44);
-  background: linear-gradient(180deg, rgba(57, 84, 124, 1), rgba(23, 39, 65, 1));
-}
-
-.window-action.close {
-  border-color: rgba(239, 90, 90, 0.36);
-  background: linear-gradient(180deg, rgba(123, 35, 35, 0.98), rgba(73, 16, 16, 0.98));
-  color: #ffd7d7;
-}
-
-.window-action.close:hover {
-  border-color: rgba(255, 132, 132, 0.56);
-  background: linear-gradient(180deg, rgba(164, 44, 44, 1), rgba(101, 20, 20, 1));
-  color: #fff1f1;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 12px 28px rgba(105, 10, 10, 0.34);
-}
-
-.window-action svg {
-  width: 1.08rem;
-  height: 1.08rem;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.85;
+.topbar-chip.subtle {
+  color: var(--text-soft);
 }
 
 .sidebar {
@@ -410,41 +509,18 @@ const activeNavItem = computed(
   min-width: 0;
 }
 
-.topbar-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  min-height: 2.15rem;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 0.52rem 0.82rem;
-  background: rgba(255, 255, 255, 0.03);
-  font-size: 0.9rem;
-  white-space: nowrap;
-}
-
-.topbar-chip.online {
-  color: #8bf1c5;
-}
-
-.topbar-chip.subtle {
-  color: var(--text-soft);
-}
-
 @media (max-width: 1180px) {
-  .window-header {
+  .titlebar-center {
+    display: none;
+  }
+
+  .header-content {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .window-meta {
+  .header-meta {
     grid-column: 1 / 2;
     justify-content: flex-start;
-  }
-
-  .window-actions {
-    grid-row: 1 / span 2;
-    grid-column: 2 / 3;
-    align-self: stretch;
   }
 }
 
@@ -469,27 +545,34 @@ const activeNavItem = computed(
 
 @media (max-width: 760px) {
   .app-shell {
-    padding: 0.75rem 0.95rem 1rem;
+    padding: 0 0.95rem 1rem;
   }
 
-  .window-header {
+  .window-header.is-desktop-shell {
+    margin: 0 -0.95rem;
+  }
+
+  .titlebar-left {
+    flex: 0 1 auto;
+  }
+
+  .title-sub {
+    display: none;
+  }
+
+  .header-content {
     grid-template-columns: 1fr;
     padding-right: 1rem;
   }
 
-  .window-drag-zone,
-  .window-meta {
+  .header-left,
+  .header-meta {
     flex-wrap: wrap;
-  }
-
-  .window-actions {
-    justify-content: flex-end;
-    padding-left: 0;
   }
 }
 
 @media (max-width: 640px) {
-  .window-status {
+  .header-status {
     width: 100%;
   }
 
@@ -497,9 +580,8 @@ const activeNavItem = computed(
     width: calc(100% - 3.6rem);
   }
 
-  .window-action {
-    width: 2.7rem;
-    height: 2.32rem;
+  .titlebar-btn {
+    width: 2.75rem;
   }
 }
 </style>

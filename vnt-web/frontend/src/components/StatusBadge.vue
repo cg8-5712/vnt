@@ -14,7 +14,7 @@ const badgeClass = computed(() => `status-badge is-${props.status}`)
 <template>
   <span :class="badgeClass">
     <i />
-    {{ statusLabel(status) }}
+    <span>{{ statusLabel(status) }}</span>
   </span>
 </template>
 

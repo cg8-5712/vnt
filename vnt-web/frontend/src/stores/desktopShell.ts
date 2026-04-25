@@ -97,6 +97,18 @@ async function minimizeWindow() {
   await tauriInvoke('window_minimize')
 }
 
+async function startDragging() {
+  if (!runtimeAvailable.value || !customTitlebarEnabled.value) {
+    return
+  }
+
+  try {
+    await tauriInvoke('window_start_dragging')
+  } catch (error) {
+    console.error('startDragging failed:', error)
+  }
+}
+
 async function toggleMaximizeWindow() {
   if (!runtimeAvailable.value || !customTitlebarEnabled.value) {
     return
@@ -161,6 +173,7 @@ export function useDesktopShellStore() {
     bootstrap,
     dispose,
     minimizeWindow,
+    startDragging,
     toggleMaximizeWindow,
     requestCloseWindow,
     cancelClosePrompt,

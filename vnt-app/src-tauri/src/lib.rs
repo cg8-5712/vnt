@@ -207,6 +207,7 @@ fn run_app() -> anyhow::Result<()> {
             window_minimize,
             window_is_maximized,
             window_toggle_maximize,
+            window_start_dragging,
             request_close_window,
             dismiss_close_request,
             resolve_close_request
@@ -517,6 +518,11 @@ fn window_toggle_maximize(window: tauri::Window) -> Result<bool, String> {
         window.maximize().map_err(|e| e.to_string())?;
         Ok(true)
     }
+}
+
+#[tauri::command]
+fn window_start_dragging(window: tauri::Window) -> Result<(), String> {
+    window.start_dragging().map_err(|e| e.to_string())
 }
 
 #[tauri::command]

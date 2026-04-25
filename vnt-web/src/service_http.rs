@@ -510,10 +510,11 @@ async fn start_vnt_internal(
     // 读取并解析配置
     let content = fs::read_to_string(&file_path)
         .await
-        .with_context(|| format!("Config file not found: {:?}", file_path))?;
+        .with_context(|| format!("配置文件不存在: {:?}", file_path))?;
 
     state.record_log("解析配置文件内容");
-    let cfg: StartConfig = toml::from_str(&content).context("Failed to parse TOML config")?;
+    let cfg: StartConfig = toml::from_str(&content)
+        .with_context(|| "配置文件格式错误，请检查TOML语法")?;
 
     let config_display_name = cfg.config_name.clone().unwrap_or_else(|| file_name.clone());
     let core_config = convert_config(cfg)?;
@@ -523,7 +524,7 @@ async fn start_vnt_internal(
     let (task_group, task_group_guard) = state
         .task_group_manager
         .create_task()
-        .context("Create task failed")?;
+        .context("创建任务失败，可能系统资源不足")?;
 
     state.record_log("创建组网管理器");
 
@@ -563,7 +564,16 @@ async fn start_vnt_network(
     let mut network_manager =
         NetworkManager::create_network(Box::new(core_config), task_group.clone())
             .await
-            .map_err(|e| anyhow!("Create network failed: {:?}", e))?;
+            .map_err(|e| {
+                let err_str = e.to_string().to_lowercase();
+                if err_str.contains("tun") || err_str.contains("device") {
+                    anyhow!("创建虚拟网卡失败: {}", e)
+                } else if err_str.contains("bind") || err_str.contains("port") {
+                    anyhow!("端口绑定失败，可能端口已被占用: {}", e)
+                } else {
+                    anyhow!("创建网络失败: {}", e)
+                }
+            })?;
 
     let vnt_api = network_manager.vnt_api();
 
@@ -592,7 +602,8 @@ async fn start_vnt_network(
             Ok(rs) => rs,
             Err(e) => {
                 log::error!("Register failed: {:?}", e);
-                state.record_log(format!("注册失败:{},5秒后重试", e));
+                let error_msg = format_connection_error(&e);
+                state.record_log(format!("连接失败: {}, 5秒后重试", error_msg));
                 tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                 continue;
             }
@@ -603,7 +614,8 @@ async fn start_vnt_network(
             }
             RegisterResponse::Failed(e) => {
                 log::error!("Register failed: {:?}", e);
-                bail!("注册失败：{}", e.message)
+                let detailed_error = format_register_error(&e);
+                bail!("{}", detailed_error)
             }
         }
     };
@@ -611,12 +623,16 @@ async fn start_vnt_network(
     log::info!("Network Started: {}/{}", reg_msg.ip, reg_msg.prefix_len);
     if !network_manager.is_no_tun() {
         state.record_log("正在创建 TUN 虚拟网卡");
-        network_manager.start_tun().await?;
+        network_manager
+            .start_tun()
+            .await
+            .with_context(|| "创建TUN设备失败，请确认有管理员权限")?;
 
         state.record_log("创建 TUN 虚拟网卡成功，设置 IP");
         network_manager
             .set_tun_network_ip(reg_msg.ip, reg_msg.prefix_len)
-            .await?;
+            .await
+            .with_context(|| "设置虚拟网卡IP失败")?;
         state.record_log("设置 IP 成功");
 
         // 配置子网路由
@@ -656,6 +672,54 @@ async fn start_vnt_network(
         log::warn!("Failed to record current config: {}", e);
     }
     Ok(())
+}
+
+/// 格式化连接错误信息
+fn format_connection_error(error: &anyhow::Error) -> String {
+    let error_str = error.to_string().to_lowercase();
+
+    if error_str.contains("connection refused") || error_str.contains("连接被拒绝") {
+        "服务器拒绝连接，请检查服务器地址和端口".to_string()
+    } else if error_str.contains("timeout") || error_str.contains("超时") {
+        "连接超时，请检查网络和服务器状态".to_string()
+    } else if error_str.contains("dns") || error_str.contains("resolve") {
+        "域名解析失败，请检查服务器地址".to_string()
+    } else if error_str.contains("network unreachable") {
+        "网络不可达，请检查网络连接".to_string()
+    } else {
+        format!("网络错误: {}", error)
+    }
+}
+
+/// 格式化注册错误信息
+fn format_register_error(error: &vnt_core::protocol::control_message::ErrorResponseMsg) -> String {
+    let msg = &error.message;
+    let code = error.code;
+
+    // 根据错误码和消息内容提供更友好的提示
+    if msg.contains("token") || msg.contains("Token") || code == 401 {
+        format!("入网Token错误 (错误码: {})", code)
+    } else if msg.contains("password") || msg.contains("Password") || msg.contains("密码") {
+        format!("加密密码错误 (错误码: {})", code)
+    } else if msg.contains("secret") || msg.contains("Secret") {
+        format!("网络密钥错误 (错误码: {})", code)
+    } else if msg.contains("network") || msg.contains("Network") {
+        format!("网络代码错误: {} (错误码: {})", msg, code)
+    } else if msg.contains("device") || msg.contains("Device") {
+        format!("设备信息错误: {} (错误码: {})", msg, code)
+    } else if msg.contains("ip") || msg.contains("IP") || msg.contains("address") {
+        format!("IP地址冲突或无效 (错误码: {})", code)
+    } else if msg.contains("version") || msg.contains("Version") {
+        format!("版本不兼容: {} (错误码: {})", msg, code)
+    } else if code == 403 {
+        format!("无权限访问 (错误码: {})", code)
+    } else if code == 429 {
+        format!("请求过于频繁，请稍后重试 (错误码: {})", code)
+    } else if code >= 500 {
+        format!("服务器内部错误: {} (错误码: {})", msg, code)
+    } else {
+        format!("注册失败: {} (错误码: {})", msg, code)
+    }
 }
 
 fn is_valid_file_name(file_name: &str) -> bool {

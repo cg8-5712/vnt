@@ -7,6 +7,25 @@ import { statusLabel } from '@/utils/format'
 const app = useAppStore()
 
 const statusClass = computed(() => `modal-status is-${app.startStatus.value}`)
+
+function getLogClass(log: string) {
+  const lowerLog = log.toLowerCase()
+  if (
+    lowerLog.includes('失败') ||
+    lowerLog.includes('错误') ||
+    lowerLog.includes('error') ||
+    lowerLog.includes('failed')
+  ) {
+    return 'log-error'
+  }
+  if (lowerLog.includes('成功') || lowerLog.includes('success')) {
+    return 'log-success'
+  }
+  if (lowerLog.includes('重试') || lowerLog.includes('retry')) {
+    return 'log-warning'
+  }
+  return ''
+}
 </script>
 
 <template>
@@ -24,7 +43,12 @@ const statusClass = computed(() => `modal-status is-${app.startStatus.value}`)
         <p v-if="app.startLogs.value.length === 0" class="log-empty">
           正在等待后续输出...
         </p>
-        <p v-for="(item, index) in app.startLogs.value" :key="`${index}-${item}`" class="log-line">
+        <p
+          v-for="(item, index) in app.startLogs.value"
+          :key="`${index}-${item}`"
+          class="log-line"
+          :class="getLogClass(item)"
+        >
           {{ item }}
         </p>
       </div>
@@ -134,6 +158,33 @@ const statusClass = computed(() => `modal-status is-${app.startStatus.value}`)
   font-size: 0.93rem;
   border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
   word-break: break-all;
+}
+
+.log-error {
+  color: #ffb0b0;
+  background: rgba(239, 90, 90, 0.08);
+  padding: 0.55rem 0.75rem;
+  margin: 0 -0.75rem;
+  border-left: 3px solid #ff6b6b;
+  border-bottom-color: rgba(239, 90, 90, 0.15);
+}
+
+.log-success {
+  color: #8bf1c5;
+  background: rgba(66, 199, 154, 0.06);
+  padding: 0.55rem 0.75rem;
+  margin: 0 -0.75rem;
+  border-left: 3px solid #42c79a;
+  border-bottom-color: rgba(66, 199, 154, 0.12);
+}
+
+.log-warning {
+  color: #ffd678;
+  background: rgba(246, 185, 56, 0.06);
+  padding: 0.55rem 0.75rem;
+  margin: 0 -0.75rem;
+  border-left: 3px solid #f6b938;
+  border-bottom-color: rgba(246, 185, 56, 0.12);
 }
 
 @media (max-width: 640px) {

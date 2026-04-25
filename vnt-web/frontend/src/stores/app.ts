@@ -65,6 +65,53 @@ function setNotice(kind: NoticeKind, message: string, timeout = 3600) {
   }, timeout)
 }
 
+function extractErrorMessage(log: string): string {
+  // 提取最后一条日志中的关键错误信息
+  if (log.includes('Token错误') || log.includes('token')) {
+    return '入网Token错误，请检查配置'
+  }
+  if (log.includes('密码错误') || log.includes('password')) {
+    return '加密密码错误，请检查配置'
+  }
+  if (log.includes('密钥错误') || log.includes('secret')) {
+    return '网络密钥错误，请检查配置'
+  }
+  if (log.includes('网络代码错误')) {
+    return '网络代码错误，请检查配置'
+  }
+  if (log.includes('连接失败') || log.includes('连接超时')) {
+    return '无法连接到服务器，请检查网络和服务器地址'
+  }
+  if (log.includes('连接被拒绝')) {
+    return '服务器拒绝连接，请检查服务器地址和端口'
+  }
+  if (log.includes('域名解析失败')) {
+    return '域名解析失败，请检查服务器地址'
+  }
+  if (log.includes('IP地址冲突') || log.includes('IP') && log.includes('无效')) {
+    return 'IP地址冲突或无效，请更换虚拟IP'
+  }
+  if (log.includes('版本不兼容')) {
+    return '客户端与服务器版本不兼容，请升级'
+  }
+  if (log.includes('TUN') || log.includes('虚拟网卡')) {
+    return 'TUN设备创建失败，请确认有管理员权限'
+  }
+  if (log.includes('端口') && (log.includes('占用') || log.includes('绑定失败'))) {
+    return '端口已被占用，请更换端口或关闭占用程序'
+  }
+  if (log.includes('配置文件格式错误') || log.includes('TOML')) {
+    return '配置文件格式错误，请检查TOML语法'
+  }
+  if (log.includes('无权限') || log.includes('权限')) {
+    return '权限不足，请以管理员身份运行'
+  }
+  if (log.includes('启动失败')) {
+    return log
+  }
+  return '启动失败，请查看日志了解详情'
+}
+
 async function fetchInfo() {
   try {
     info.value = await getInfo()
@@ -116,7 +163,9 @@ async function pollStartStatus() {
     if (status.status === 'stopped' && status.logs.length > 0) {
       stopStartPolling()
       await fetchInfo()
-      setNotice('error', '启动失败，请检查配置和网络状态。', 5200)
+      const lastLog = status.logs[status.logs.length - 1]
+      const errorMsg = extractErrorMessage(lastLog)
+      setNotice('error', errorMsg, 6000)
     }
   } catch (error) {
     console.error(error)
