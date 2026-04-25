@@ -333,7 +333,7 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           PLATFORM="${{ matrix.PLATFORM }}"
           ARCH="${{ matrix.ARCH }}"
-          RELEASE_ROOT="./vnt-app/src-tauri/target/release"
+          RELEASE_ROOT="./target/release"
           BUNDLE_ROOT="${RELEASE_ROOT}/bundle"
 
           copy_release_file() {
