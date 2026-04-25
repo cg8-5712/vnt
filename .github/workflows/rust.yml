@@ -36,9 +36,9 @@ jobs:
           - TARGET: arm-unknown-linux-musleabi
             OS: ubuntu-latest
           - TARGET: x86_64-apple-darwin
-            OS: macos-latest
+            OS: macos-15-intel
           - TARGET: aarch64-apple-darwin
-            OS: macos-latest
+            OS: macos-14
           - TARGET: i686-pc-windows-msvc
             OS: windows-latest
           - TARGET: x86_64-pc-windows-msvc
@@ -77,7 +77,7 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install protoc
       - name: Use strawberry perl
-        if: startsWith(matrix.os, 'windows')
+        if: runner.os == 'Windows'
         run: echo OPENSSL_SRC_PERL=C:/Strawberry/perl/bin/perl >> $GITHUB_ENV
       - name: List
         run: find ./
@@ -235,19 +235,19 @@ jobs:
           else
             TAG=$GITHUB_SHA
           fi
-          WEB_ZIP_NAME="vnt2_web-${TARGET}-${TAG}.zip"
-          CLI_ZIP_NAME="vnt2_cli-${TARGET}-${TAG}.zip"
+          WEB_ZIP_NAME="vnt-web-${TARGET}-${TAG}.zip"
+          CLI_ZIP_NAME="vnt-cli-${TARGET}-${TAG}.zip"
 
           if [[ $OS =~ ^windows.*$ ]]; then
-              cp ./target/$TARGET/release/vnt2_web.exe ./package/web/
-              cp ./target/$TARGET/release/vnt2_cli.exe ./package/cli/
+              cp ./target/$TARGET/release/vnt2_web.exe ./package/web/vnt-web.exe
+              cp ./target/$TARGET/release/vnt2_cli.exe ./package/cli/vnt-cli.exe
               cd ./package/web
               7z a -tzip "../../artifacts/$WEB_ZIP_NAME" ./*
               cd ../cli
               7z a -tzip "../../artifacts/$CLI_ZIP_NAME" ./*
           else
-              cp ./target/$TARGET/release/vnt2_web ./package/web/
-              cp ./target/$TARGET/release/vnt2_cli ./package/cli/
+              cp ./target/$TARGET/release/vnt2_web ./package/web/vnt-web
+              cp ./target/$TARGET/release/vnt2_cli ./package/cli/vnt-cli
               cd ./package/web
               zip "../../artifacts/$WEB_ZIP_NAME" ./*
               cd ../cli
@@ -271,12 +271,28 @@ jobs:
         include:
           - NAME: linux-x64
             OS: ubuntu-22.04
+            PLATFORM: linux
+            ARCH: x64
+          - NAME: linux-arm64
+            OS: ubuntu-22.04-arm
+            PLATFORM: linux
+            ARCH: arm64
           - NAME: windows-x64
             OS: windows-2022
+            PLATFORM: windows
+            ARCH: x64
+          - NAME: windows-arm64
+            OS: windows-11-arm
+            PLATFORM: windows
+            ARCH: arm64
           - NAME: macos-x64
-            OS: macos-13
+            OS: macos-15-intel
+            PLATFORM: macos
+            ARCH: x64
           - NAME: macos-arm64
             OS: macos-14
+            PLATFORM: macos
+            ARCH: arm64
     steps:
       - uses: actions/checkout@v4
       - name: Set up Node
@@ -314,9 +330,42 @@ jobs:
       - name: Collect app artifacts
         run: |
           mkdir -p ./release-files
-          find ./vnt-app/src-tauri/target/release/bundle -type f \
-            \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.msi' -o -name '*-setup.exe' -o -name '*.dmg' -o -name '*.app.tar.gz' \) \
-            -exec cp "{}" ./release-files/ \;
+          TAG="${GITHUB_REF_NAME}"
+          PLATFORM="${{ matrix.PLATFORM }}"
+          ARCH="${{ matrix.ARCH }}"
+          RELEASE_ROOT="./vnt-app/src-tauri/target/release"
+          BUNDLE_ROOT="${RELEASE_ROOT}/bundle"
+
+          copy_release_file() {
+            local source_file="$1"
+            local target_name="$2"
+
+            if [[ -f "$source_file" ]]; then
+              cp "$source_file" "./release-files/${target_name}"
+            fi
+          }
+
+          if [[ "${PLATFORM}" == "windows" ]]; then
+            PORTABLE_EXE="$(find "${RELEASE_ROOT}" -maxdepth 1 -type f -name '*.exe' ! -name '*-setup.exe' -print -quit)"
+            MSI_FILE="$(find "${BUNDLE_ROOT}" -type f -name '*.msi' -print -quit)"
+            SETUP_EXE="$(find "${BUNDLE_ROOT}" -type f -name '*-setup.exe' -print -quit)"
+
+            copy_release_file "${PORTABLE_EXE}" "vnt-app-${PLATFORM}-${ARCH}-${TAG}-portable.exe"
+            copy_release_file "${MSI_FILE}" "vnt-app-${PLATFORM}-${ARCH}-${TAG}-installer.msi"
+            copy_release_file "${SETUP_EXE}" "vnt-app-${PLATFORM}-${ARCH}-${TAG}-setup.exe"
+          else
+            APPIMAGE_FILE="$(find "${BUNDLE_ROOT}" -type f -name '*.AppImage' -print -quit)"
+            DEB_FILE="$(find "${BUNDLE_ROOT}" -type f -name '*.deb' -print -quit)"
+            RPM_FILE="$(find "${BUNDLE_ROOT}" -type f -name '*.rpm' -print -quit)"
+            DMG_FILE="$(find "${BUNDLE_ROOT}" -type f -name '*.dmg' -print -quit)"
+            APP_TAR_FILE="$(find "${BUNDLE_ROOT}" -type f -name '*.app.tar.gz' -print -quit)"
+
+            copy_release_file "${APPIMAGE_FILE}" "vnt-app-${PLATFORM}-${ARCH}-${TAG}.AppImage"
+            copy_release_file "${DEB_FILE}" "vnt-app-${PLATFORM}-${ARCH}-${TAG}.deb"
+            copy_release_file "${RPM_FILE}" "vnt-app-${PLATFORM}-${ARCH}-${TAG}.rpm"
+            copy_release_file "${DMG_FILE}" "vnt-app-${PLATFORM}-${ARCH}-${TAG}.dmg"
+            copy_release_file "${APP_TAR_FILE}" "vnt-app-${PLATFORM}-${ARCH}-${TAG}.app.tar.gz"
+          fi
 
           if [[ -z "$(find ./release-files -type f -print -quit)" ]]; then
             echo "No app bundle files found" >&2

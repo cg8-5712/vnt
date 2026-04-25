@@ -35,6 +35,18 @@ body,
   min-height: 100%;
 }
 
+html,
+body {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
 body {
   overflow-x: hidden;
   background:

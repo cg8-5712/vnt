@@ -52,7 +52,9 @@ function handleTitlebarMouseDown(event: MouseEvent) {
         @mousedown="handleTitlebarMouseDown"
       >
         <div class="titlebar-left">
-          <div class="app-icon">V</div>
+          <div class="app-icon">
+            <img class="logo-image" src="/vnt-mark.png" alt="" />
+          </div>
           <div class="app-title">
             <span class="title-main">VNT Console</span>
             <span class="title-sub">{{ activeNavItem.label }}</span>
@@ -114,7 +116,9 @@ function handleTitlebarMouseDown(event: MouseEvent) {
 
       <div v-else class="header-content panel">
         <div class="header-left">
-          <div class="window-mark">V</div>
+          <div class="window-mark">
+            <img class="logo-image" src="/vnt-mark.png" alt="" />
+          </div>
           <div class="window-copy">
             <strong>{{ activeNavItem.label }}</strong>
             <span>{{ activeNavItem.hint }}</span>
@@ -140,7 +144,9 @@ function handleTitlebarMouseDown(event: MouseEvent) {
 
     <aside class="sidebar panel">
       <div class="brand">
-        <div class="brand-mark">V</div>
+        <div class="brand-mark">
+          <img class="logo-image" src="/vnt-mark.png" alt="" />
+        </div>
         <div>
           <p>VNT Console</p>
           <span>新的 Web 控制台基座</span>
@@ -220,16 +226,19 @@ function handleTitlebarMouseDown(event: MouseEvent) {
 }
 
 .app-icon {
-  display: grid;
-  place-items: center;
-  width: 1.75rem;
-  height: 1.75rem;
-  border-radius: 0.45rem;
-  background: linear-gradient(135deg, #42c79a, #7c9bff);
-  color: #04121d;
-  font-size: 0.85rem;
-  font-weight: 900;
+  width: 1.9rem;
+  height: 1.9rem;
   flex-shrink: 0;
+}
+
+.logo-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0.75rem 1.1rem rgba(60, 128, 255, 0.18));
+  user-select: none;
+  pointer-events: none;
 }
 
 .app-title {
@@ -347,17 +356,9 @@ function handleTitlebarMouseDown(event: MouseEvent) {
 }
 
 .window-mark {
-  display: grid;
-  width: 2.65rem;
-  height: 2.65rem;
+  width: 2.75rem;
+  height: 2.75rem;
   flex: none;
-  place-items: center;
-  border-radius: 0.98rem;
-  background: linear-gradient(140deg, rgba(66, 199, 154, 0.92), rgba(124, 155, 255, 0.95));
-  color: #04121d;
-  font-size: 1.08rem;
-  font-weight: 900;
-  box-shadow: 0 1rem 2rem rgba(66, 199, 154, 0.18);
 }
 
 .window-copy {
@@ -427,6 +428,9 @@ function handleTitlebarMouseDown(event: MouseEvent) {
   min-height: calc(100vh - 6.4rem);
   flex-direction: column;
   gap: 1.5rem;
+  overflow-y: auto;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 .brand {
@@ -436,16 +440,9 @@ function handleTitlebarMouseDown(event: MouseEvent) {
 }
 
 .brand-mark {
-  display: grid;
   width: 3rem;
   height: 3rem;
-  place-items: center;
-  border-radius: 1rem;
-  background: linear-gradient(140deg, var(--accent), var(--accent-strong));
-  color: #04121d;
-  font-weight: 900;
-  font-size: 1.3rem;
-  box-shadow: 0 1rem 2rem rgba(66, 199, 154, 0.2);
+  flex: none;
 }
 
 .brand p,
@@ -467,6 +464,8 @@ function handleTitlebarMouseDown(event: MouseEvent) {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 .nav-item {
@@ -507,6 +506,13 @@ function handleTitlebarMouseDown(event: MouseEvent) {
 
 .content-shell {
   min-width: 0;
+}
+
+.sidebar::-webkit-scrollbar,
+.nav-list::-webkit-scrollbar,
+.header-status::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 @media (max-width: 1180px) {
