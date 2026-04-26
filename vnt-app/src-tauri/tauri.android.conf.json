@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "io.github.cg85712.vnt2",
+  "build": {
+    "beforeDevCommand": "yarn --cwd ../vnt-web/frontend build",
+    "beforeBuildCommand": "yarn --cwd ../vnt-web/frontend build",
+    "devUrl": null,
+    "frontendDist": "../../vnt-web/static"
+  },
+  "bundle": {
+    "shortDescription": "VNT2 Android app",
+    "longDescription": "VNT2 Android app shell backed by the shared VNT web console."
+  }
+}

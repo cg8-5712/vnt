@@ -408,6 +408,18 @@ where
     Ok(())
 }
 
+#[cfg(target_os = "android")]
+fn ensure_android_tun_supported() -> anyhow::Result<()> {
+    bail!(
+        "Android VpnService integration is not wired into vnt-app yet. Please use no_tun = true for now."
+    )
+}
+
+#[cfg(not(target_os = "android"))]
+fn ensure_android_tun_supported() -> anyhow::Result<()> {
+    Ok(())
+}
+
 /// 确定自动启动的配置文件
 async fn determine_auto_start_file(
     start_config_file_name: Option<PathBuf>,
@@ -622,6 +634,7 @@ async fn start_vnt_network(
     state.record_log(format!("注册成功 {}/{}", reg_msg.ip, reg_msg.prefix_len));
     log::info!("Network Started: {}/{}", reg_msg.ip, reg_msg.prefix_len);
     if !network_manager.is_no_tun() {
+        ensure_android_tun_supported()?;
         state.record_log("正在创建 TUN 虚拟网卡");
         network_manager
             .start_tun()
@@ -629,13 +642,17 @@ async fn start_vnt_network(
             .with_context(|| "创建TUN设备失败，请确认有管理员权限")?;
 
         state.record_log("创建 TUN 虚拟网卡成功，设置 IP");
-        network_manager
-            .set_tun_network_ip(reg_msg.ip, reg_msg.prefix_len)
-            .await
-            .with_context(|| "设置虚拟网卡IP失败")?;
-        state.record_log("设置 IP 成功");
+        #[cfg(not(target_os = "android"))]
+        {
+            network_manager
+                .set_tun_network_ip(reg_msg.ip, reg_msg.prefix_len)
+                .await
+                .with_context(|| "设置虚拟网卡IP失败")?;
+            state.record_log("设置 IP 成功");
 
-        // 配置子网路由
+            // 配置子网路由
+        }
+        #[cfg(not(target_os = "android"))]
         if !sub_input.is_empty()
             && let Ok(if_index) = network_manager.tun_if_index().await
             && let Ok(mut route_manager) = route_manager::RouteManager::new()

@@ -20,8 +20,6 @@ toml = "0.9.8"
 hostname = "0.4.2"
 ipnet = { version = "2.11", features = ["serde"] }
 
-route_manager = "0.2.11"
-
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = [
   "Win32_Foundation",
@@ -30,6 +28,9 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ] }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+route_manager = "0.2.11"
 
 [features]
 default = []

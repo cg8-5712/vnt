@@ -20,8 +20,8 @@
     "active": true,
     "targets": "all",
     "category": "DeveloperTool",
-    "shortDescription": "VNT2 desktop app",
-    "longDescription": "VNT2 desktop app for Windows, Linux, and macOS.",
+    "shortDescription": "VNT2 app",
+    "longDescription": "VNT2 app for desktop and mobile platforms.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

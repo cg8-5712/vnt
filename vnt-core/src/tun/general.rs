@@ -9,8 +9,10 @@ use std::io;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 use tokio::sync::mpsc::{Receiver, Sender};
+use tun_rs::AsyncDevice;
+#[cfg(not(target_os = "android"))]
+use tun_rs::DeviceBuilder;
 use tun_rs::async_framed::{Decoder, DeviceFramedRead, DeviceFramedWrite, Encoder};
-use tun_rs::{AsyncDevice, DeviceBuilder};
 
 #[derive(Clone)]
 pub struct DeviceIOManager {
@@ -98,6 +100,7 @@ impl DeviceIOManager {
             bail!("device doesn't exist")
         }
     }
+    #[cfg(not(target_os = "android"))]
     pub async fn set_network(&self, ip: Ipv4Addr, prefix_len: u8) -> anyhow::Result<()> {
         let mut guard = self.device.lock().await;
         let Some(dev) = guard.0.as_ref() else {
@@ -117,6 +120,7 @@ impl DeviceIOManager {
     }
 }
 
+#[cfg(target_os = "android")]
 fn create_tun(config: DeviceConfig) -> anyhow::Result<AsyncDevice> {
     #[cfg(unix)]
     if let Some(fd) = config.tun_fd {
@@ -124,6 +128,19 @@ fn create_tun(config: DeviceConfig) -> anyhow::Result<AsyncDevice> {
         // Using an invalid fd may cause undefined behavior.
         unsafe { return Ok(AsyncDevice::from_fd(fd)?) }
     }
+
+    bail!("Android requires an existing TUN file descriptor")
+}
+
+#[cfg(not(target_os = "android"))]
+fn create_tun(config: DeviceConfig) -> anyhow::Result<AsyncDevice> {
+    #[cfg(unix)]
+    if let Some(fd) = config.tun_fd {
+        // SAFETY: Caller must ensure fd is a valid, open file descriptor for a TUN device.
+        // Using an invalid fd may cause undefined behavior.
+        unsafe { return Ok(AsyncDevice::from_fd(fd)?) }
+    }
+
     let mut builder = DeviceBuilder::new();
     if let Some(tun_name) = config.tun_name {
         builder = builder.name(tun_name);

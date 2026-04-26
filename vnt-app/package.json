@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
+    "android:init": "tauri android init",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build",
     "tauri": "tauri"
   },
   "devDependencies": {

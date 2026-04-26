@@ -45,10 +45,12 @@ reed-solomon-erasure = "6.0"
 
 serde = { version = "1.0.228", features = ["derive"] }
 rcgen = "0.14.6"
-machine-uid = "0.5.4"
 
 zerocopy = { version = "0.8.31", features = ["derive"] }
 socket2 = { version = "0.6.1", features = ["all"] }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+machine-uid = "0.5.4"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3.9", features = ["winreg"] }

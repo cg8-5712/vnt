@@ -5,8 +5,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 
 use anyhow::{Context, anyhow};
+use portpicker::pick_unused_port;
 use serde::{Deserialize, Serialize};
+use tauri::ipc::CapabilityBuilder;
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tokio::sync::oneshot;
@@ -32,14 +36,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     MB_ICONERROR, MB_OK, MessageBoxW, SW_SHOWNORMAL,
 };
 
-#[cfg(debug_assertions)]
-const HTTP_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 19099);
-
-#[cfg(not(debug_assertions))]
-const HTTP_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
-
-#[cfg(debug_assertions)]
-const WINDOW_URL: &str = "http://127.0.0.1:5173";
+const DESKTOP_DEV_SERVER_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 19099);
+const DESKTOP_DEV_WINDOW_URL: &str = "http://127.0.0.1:5173";
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const TRAY_ID: &str = "main-tray";
@@ -48,6 +46,14 @@ const TRAY_RESET_CLOSE_ID: &str = "tray_reset_close_behavior";
 const TRAY_QUIT_ID: &str = "tray_quit";
 const CLOSE_CONFIRM_EVENT: &str = "vnt://confirm-close";
 const SHELL_CONFIG_FILE: &str = "desktop-shell.toml";
+const REMOTE_CAPABILITY_ID: &str = "main-window-remote";
+
+#[derive(Debug, Clone, Copy)]
+struct RuntimeServerConfig {
+    bind_addr: SocketAddr,
+    webview_port: u16,
+    use_frontend_dev_server: bool,
+}
 
 struct HttpServerShutdown(Mutex<Option<oneshot::Sender<()>>>);
 
@@ -177,6 +183,7 @@ impl DesktopShellState {
     }
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     vnt2::log::log_init("vnt_app");
 
@@ -201,7 +208,10 @@ pub fn run() {
 }
 
 fn run_app() -> anyhow::Result<()> {
+    let runtime_config = runtime_server_config()?;
+
     tauri::Builder::default()
+        .plugin(tauri_plugin_localhost::Builder::new(runtime_config.webview_port).build())
         .invoke_handler(tauri::generate_handler![
             desktop_shell_info,
             window_minimize,
@@ -212,19 +222,21 @@ fn run_app() -> anyhow::Result<()> {
             dismiss_close_request,
             resolve_close_request
         ])
-        .setup(|app| {
+        .setup(move |app| {
             let app_handle = app.handle().clone();
             let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
             app.manage(HttpServerShutdown(Mutex::new(Some(shutdown_tx))));
             app.manage(DesktopShellState::new(&app_handle));
             create_tray(app)?;
-            let server_addr = start_http_server(app_handle.clone(), shutdown_rx)?;
-            create_main_window(&app_handle, server_addr)?;
+            let server_addr =
+                start_http_server(app_handle.clone(), shutdown_rx, runtime_config.bind_addr)?;
+            create_main_window(app, window_url(&runtime_config, server_addr))?;
 
             Ok(())
         })
         .on_window_event(|window, event| match event {
+            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
             tauri::WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
 
@@ -251,9 +263,35 @@ fn run_app() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn runtime_server_config() -> anyhow::Result<RuntimeServerConfig> {
+    if cfg!(all(
+        debug_assertions,
+        any(
+            target_os = "windows",
+            target_os = "linux",
+            target_os = "macos"
+        )
+    )) {
+        return Ok(RuntimeServerConfig {
+            bind_addr: DESKTOP_DEV_SERVER_ADDR,
+            webview_port: DESKTOP_DEV_SERVER_ADDR.port(),
+            use_frontend_dev_server: true,
+        });
+    }
+
+    let port = pick_unused_port().context("failed to reserve a localhost port for the webview")?;
+
+    Ok(RuntimeServerConfig {
+        bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
+        webview_port: port,
+        use_frontend_dev_server: false,
+    })
+}
+
 fn start_http_server(
     app: AppHandle,
     shutdown_rx: oneshot::Receiver<()>,
+    bind_addr: SocketAddr,
 ) -> anyhow::Result<SocketAddr> {
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
     let ready_tx = Arc::new(Mutex::new(Some(ready_tx)));
@@ -262,7 +300,7 @@ fn start_http_server(
 
     tauri::async_runtime::spawn(async move {
         let result = vnt_web::run_http_server_with_shutdown(
-            HTTP_ADDR,
+            bind_addr,
             None,
             move |addr| {
                 if let Ok(mut sender) = ready_tx_for_server.lock() {
@@ -295,16 +333,25 @@ fn start_http_server(
         .map_err(|msg| anyhow!(msg))
 }
 
-fn create_main_window(app: &AppHandle, server_addr: SocketAddr) -> anyhow::Result<()> {
-    let url = window_url(server_addr);
+fn create_main_window(app: &mut tauri::App, url: String) -> anyhow::Result<()> {
+    app.add_capability(
+        CapabilityBuilder::new(REMOTE_CAPABILITY_ID)
+            .remote(url.clone())
+            .window(MAIN_WINDOW_LABEL),
+    )?;
 
     let mut builder =
         WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::External(url.parse()?))
             .title("VNT2")
+            .visible(true);
+
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+    {
+        builder = builder
             .inner_size(1180.0, 820.0)
             .min_inner_size(960.0, 640.0)
-            .resizable(true)
-            .visible(true);
+            .resizable(true);
+    }
 
     #[cfg(target_os = "windows")]
     {
@@ -316,6 +363,7 @@ fn create_main_window(app: &AppHandle, server_addr: SocketAddr) -> anyhow::Resul
     Ok(())
 }
 
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 fn create_tray(app: &tauri::App) -> anyhow::Result<()> {
     let show_item = MenuItem::with_id(app, TRAY_SHOW_ID, "显示主窗口", true, None::<&str>)?;
     let reset_close_item = MenuItem::with_id(
@@ -384,6 +432,12 @@ fn create_tray(app: &tauri::App) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+fn create_tray(_app: &tauri::App) -> anyhow::Result<()> {
+    Ok(())
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 fn handle_close_request(
     window: &tauri::Window,
     app: &AppHandle,
@@ -409,6 +463,7 @@ fn handle_close_request(
     }
 }
 
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 fn emit_close_prompt(
     window: &tauri::Window,
     shell_state: &DesktopShellState,
@@ -425,11 +480,13 @@ fn emit_close_prompt(
     Ok(())
 }
 
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 fn hide_window_to_tray(window: &tauri::Window) -> anyhow::Result<()> {
     window.hide().context("failed to hide main window")?;
     Ok(())
 }
 
+#[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 fn show_main_window(app: &AppHandle) -> anyhow::Result<()> {
     let window = app
         .get_webview_window(MAIN_WINDOW_LABEL)
@@ -499,30 +556,66 @@ fn desktop_shell_info() -> DesktopShellInfo {
 
 #[tauri::command]
 fn window_minimize(window: tauri::Window) -> Result<(), String> {
-    window.minimize().map_err(|e| e.to_string())
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+    {
+        return window.minimize().map_err(|e| e.to_string());
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    {
+        let _ = window;
+        Ok(())
+    }
 }
 
 #[tauri::command]
 fn window_is_maximized(window: tauri::Window) -> Result<bool, String> {
-    window.is_maximized().map_err(|e| e.to_string())
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+    {
+        return window.is_maximized().map_err(|e| e.to_string());
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    {
+        let _ = window;
+        Ok(false)
+    }
 }
 
 #[tauri::command]
 fn window_toggle_maximize(window: tauri::Window) -> Result<bool, String> {
-    let is_maximized = window.is_maximized().map_err(|e| e.to_string())?;
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+    {
+        let is_maximized = window.is_maximized().map_err(|e| e.to_string())?;
 
-    if is_maximized {
-        window.unmaximize().map_err(|e| e.to_string())?;
+        if is_maximized {
+            window.unmaximize().map_err(|e| e.to_string())?;
+            Ok(false)
+        } else {
+            window.maximize().map_err(|e| e.to_string())?;
+            Ok(true)
+        }
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    {
+        let _ = window;
         Ok(false)
-    } else {
-        window.maximize().map_err(|e| e.to_string())?;
-        Ok(true)
     }
 }
 
 #[tauri::command]
 fn window_start_dragging(window: tauri::Window) -> Result<(), String> {
-    window.start_dragging().map_err(|e| e.to_string())
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+    {
+        return window.start_dragging().map_err(|e| e.to_string());
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    {
+        let _ = window;
+        Ok(())
+    }
 }
 
 #[tauri::command]
@@ -531,7 +624,16 @@ fn request_close_window(
     app: AppHandle,
     shell_state: State<'_, DesktopShellState>,
 ) -> Result<CloseRequestOutcome, String> {
-    handle_close_request(&window, &app, shell_state.inner()).map_err(|e| e.to_string())
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+    {
+        return handle_close_request(&window, &app, shell_state.inner()).map_err(|e| e.to_string());
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+    {
+        let _ = (window, app, shell_state);
+        Ok(CloseRequestOutcome::Ignored)
+    }
 }
 
 #[tauri::command]
@@ -558,7 +660,15 @@ fn resolve_close_request(
 
     match action {
         CloseDecision::MinimizeToTray => {
-            hide_window_to_tray(&window).map_err(|e| e.to_string())?;
+            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+            {
+                hide_window_to_tray(&window).map_err(|e| e.to_string())?;
+            }
+
+            #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+            {
+                let _ = window;
+            }
         }
         CloseDecision::Close => exit_application(&app, shell_state),
     }
@@ -566,14 +676,12 @@ fn resolve_close_request(
     Ok(())
 }
 
-#[cfg(debug_assertions)]
-fn window_url(_server_addr: SocketAddr) -> String {
-    WINDOW_URL.to_string()
-}
-
-#[cfg(not(debug_assertions))]
-fn window_url(server_addr: SocketAddr) -> String {
-    format!("http://{server_addr}")
+fn window_url(runtime_config: &RuntimeServerConfig, server_addr: SocketAddr) -> String {
+    if runtime_config.use_frontend_dev_server {
+        DESKTOP_DEV_WINDOW_URL.to_string()
+    } else {
+        format!("http://localhost:{}", server_addr.port())
+    }
 }
 
 #[cfg(windows)]
