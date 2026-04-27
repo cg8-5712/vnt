@@ -340,10 +340,14 @@ fn create_main_window(app: &mut tauri::App, url: String) -> anyhow::Result<()> {
             .window(MAIN_WINDOW_LABEL),
     )?;
 
-    let mut builder =
-        WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::External(url.parse()?))
-            .title("VNT2")
-            .visible(true);
+    let builder =
+        WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::External(url.parse()?));
+
+    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+    let mut builder = builder.title("VNT2").visible(true);
+
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    let mut builder = builder;
 
     #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
     {

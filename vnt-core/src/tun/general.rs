@@ -21,6 +21,7 @@ pub struct DeviceIOManager {
 }
 type DeviceMutex = Arc<tokio::sync::Mutex<(Option<DeviceTask>, Option<(Ipv4Addr, u8)>)>>;
 pub struct DeviceTask {
+    #[cfg_attr(target_os = "android", allow(dead_code))]
     device: Arc<AsyncDevice>,
     task_recv: SubTask,
     task_send: SubTask,

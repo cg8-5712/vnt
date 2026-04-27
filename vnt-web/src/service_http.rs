@@ -569,7 +569,7 @@ async fn start_vnt_network(
     file_name: String,
     config_display_name: String,
     core_config: CoreConfig,
-    sub_input: Vec<NetInput>,
+    _sub_input: Vec<NetInput>,
     task_group: vnt_core::utils::task_control::TaskGroup,
     task_group_guard: vnt_core::utils::task_control::TaskGroupGuard,
 ) -> anyhow::Result<()> {
@@ -653,12 +653,12 @@ async fn start_vnt_network(
             // 配置子网路由
         }
         #[cfg(not(target_os = "android"))]
-        if !sub_input.is_empty()
+        if !_sub_input.is_empty()
             && let Ok(if_index) = network_manager.tun_if_index().await
             && let Ok(mut route_manager) = route_manager::RouteManager::new()
         {
             state.record_log("配置子网路由");
-            for input in &sub_input {
+            for input in &_sub_input {
                 let route =
                     route_manager::Route::new(input.net.network().into(), input.net.prefix_len())
                         .with_gateway(input.target_ip.into())
