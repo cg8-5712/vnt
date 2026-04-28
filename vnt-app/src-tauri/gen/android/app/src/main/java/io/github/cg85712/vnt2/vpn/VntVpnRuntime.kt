@@ -306,13 +306,13 @@ object VntVpnRuntime {
       status = localStatus,
       current_config_name = localConfig.configName,
       current_config_file = localConfig.fileName,
-      online_client_num = clientList.count { it.online },
-      offline_client_num = clientList.count { !it.online },
+      online_client_num = clientList.count { it.isOnline() },
+      offline_client_num = clientList.count { !it.isOnline() },
       direct_client_num = directCount,
       server_info = serverList.map {
         ServerInfoPayload(
           server = it.serverAddr,
-          connected = it.connected,
+          connected = it.isConnected(),
           server_rtt = it.rtt,
           server_version = it.serverVersion,
         )
@@ -355,7 +355,7 @@ object VntVpnRuntime {
       PeerItemPayload(
         ip = client.ip,
         name = null,
-        online = client.online || primaryRouteByIp.containsKey(client.ip),
+        online = client.isOnline() || primaryRouteByIp.containsKey(client.ip),
         route = primaryRouteByIp[client.ip],
         version = "",
         last_connected_time = 0,

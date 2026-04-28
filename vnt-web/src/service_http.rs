@@ -436,7 +436,7 @@ where
 #[cfg(target_os = "android")]
 fn ensure_android_tun_supported() -> anyhow::Result<()> {
     bail!(
-        "Android VpnService integration is not wired into vnt-app yet. Please use no_tun = true for now."
+        "Android runtime networking is managed by the native VpnService. Use the app start/stop controls instead of the HTTP runtime endpoints."
     )
 }
 
@@ -1025,7 +1025,7 @@ async fn delete_config(
 fn convert_config(cfg: StartConfig) -> anyhow::Result<CoreConfig> {
     #[cfg(target_os = "android")]
     if !cfg.no_tun {
-        bail!("Android VpnService integration is not wired into vnt-app yet. Please set no_tun = true for now.");
+        bail!("Android runtime networking is managed by the native VpnService. Use the app start/stop controls instead of the HTTP runtime endpoints.");
     }
 
     let server_addrs: Vec<ProtocolAddress> = cfg

@@ -8,3 +8,4 @@ data/config.toml
 *.iml
 vnt-app/src-tauri/logs/*
 .gradle-user/
+.gradle-home/
