@@ -1,6 +1,6 @@
 mod service_http;
 
-pub use service_http::{run_http_server, run_http_server_with_shutdown};
+pub use service_http::{StartConfig, run_http_server, run_http_server_with_shutdown};
 
 struct ScopeGuard<F: FnOnce()>(Option<F>);
 

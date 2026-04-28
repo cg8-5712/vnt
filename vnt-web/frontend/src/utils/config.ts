@@ -30,12 +30,7 @@ const DEFAULT_CONFIG: VisualConfig = {
 }
 
 function shouldPreferNoTun() {
-  if (typeof window === 'undefined') {
-    return false
-  }
-
-  const { hostname, protocol } = window.location
-  return hostname === 'tauri.localhost' || !/^https?:$/.test(protocol)
+  return false
 }
 
 function trimString(value: unknown) {

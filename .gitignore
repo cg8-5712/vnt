@@ -7,3 +7,4 @@ data/config.toml
 .idea/
 *.iml
 vnt-app/src-tauri/logs/*
+.gradle-user/

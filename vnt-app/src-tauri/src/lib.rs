@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use anyhow::{Context, anyhow};
 use portpicker::pick_unused_port;
 use serde::{Deserialize, Serialize};
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 use tauri::ipc::CapabilityBuilder;
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -14,6 +15,15 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tokio::sync::oneshot;
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+mod android_vpn;
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+mod mobile_vpn_plugin;
+
+#[cfg(target_os = "android")]
+#[path = "../../../vnt-jni/src/lib.rs"]
+mod android_jni;
 
 #[cfg(windows)]
 use std::ffi::{OsStr, OsString};
@@ -211,6 +221,7 @@ fn run_app() -> anyhow::Result<()> {
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
         tauri::Builder::default()
+            .plugin(mobile_vpn_plugin::init())
             .invoke_handler(tauri::generate_handler![
                 desktop_shell_info,
                 window_minimize,
@@ -219,7 +230,14 @@ fn run_app() -> anyhow::Result<()> {
                 window_start_dragging,
                 request_close_window,
                 dismiss_close_request,
-                resolve_close_request
+                resolve_close_request,
+                android_vpn::android_vpn_start,
+                android_vpn::android_vpn_restart,
+                android_vpn::android_vpn_stop,
+                android_vpn::android_vpn_start_status,
+                android_vpn::android_vpn_info,
+                android_vpn::android_vpn_peers,
+                android_vpn::android_vpn_routes
             ])
             .setup(move |app| {
                 let app_handle = app.handle().clone();
@@ -254,6 +272,7 @@ fn run_app() -> anyhow::Result<()> {
 
         tauri::Builder::default()
             .plugin(tauri_plugin_localhost::Builder::new(runtime_config.webview_port).build())
+            .plugin(mobile_vpn_plugin::init())
             .invoke_handler(tauri::generate_handler![
                 desktop_shell_info,
                 window_minimize,

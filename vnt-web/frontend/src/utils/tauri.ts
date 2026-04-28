@@ -36,6 +36,14 @@ export function hasTauriRuntime() {
   return typeof window !== 'undefined' && !!window.__TAURI__?.core?.invoke
 }
 
+export function isAndroidTauriRuntime() {
+  return (
+    hasTauriRuntime() &&
+    typeof navigator !== 'undefined' &&
+    /Android/i.test(navigator.userAgent)
+  )
+}
+
 export async function tauriInvoke<T>(
   command: string,
   args?: Record<string, unknown>,

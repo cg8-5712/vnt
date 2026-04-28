@@ -2,7 +2,9 @@ use crate::enhanced_tunnel::outbound::EnhancedOutbound;
 use crate::protocol::ip_packet_protocol::HEAD_LENGTH;
 use crate::protocol::transmission::TransmissionBytes;
 use crate::utils::task_control::{SubTask, TaskGroup};
-use anyhow::{Context, bail};
+use anyhow::bail;
+#[cfg(not(target_os = "android"))]
+use anyhow::Context;
 use bytes::BytesMut;
 use futures::{SinkExt, StreamExt};
 use std::io;

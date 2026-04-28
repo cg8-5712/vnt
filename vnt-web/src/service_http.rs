@@ -357,6 +357,9 @@ where
     R: FnOnce(SocketAddr) + Send + 'static,
 {
     let base_dir = data_dir.unwrap_or_default();
+    #[cfg(target_os = "android")]
+    let _ = &start_config_file_name;
+
     if !base_dir.as_os_str().is_empty() {
         vnt_core::utils::device_id::set_fallback_dir(base_dir.clone());
     }
@@ -375,12 +378,16 @@ where
     };
 
     // 自动启动逻辑
+    #[cfg(not(target_os = "android"))]
     let auto_start_file = determine_auto_start_file(
         start_config_file_name,
         &state.config_dir,
         &state.current_config_record,
     )
     .await;
+
+    #[cfg(target_os = "android")]
+    let auto_start_file: Option<(String, PathBuf)> = None;
 
     if let Some((file_name, path)) = auto_start_file {
         log::info!("Auto starting VNT with config: {:?}", path);
@@ -439,6 +446,7 @@ fn ensure_android_tun_supported() -> anyhow::Result<()> {
 }
 
 /// 确定自动启动的配置文件
+#[cfg(not(target_os = "android"))]
 async fn determine_auto_start_file(
     start_config_file_name: Option<PathBuf>,
     config_dir: &Path,

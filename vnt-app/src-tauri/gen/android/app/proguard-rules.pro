@@ -19,3 +19,11 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+-keep class com.vnt.** { *; }
+-keep class io.github.cg85712.vnt2.vpn.** { *; }
+
+-keepclassmembers class * {
+  @app.tauri.annotation.Command <methods>;
+  @app.tauri.annotation.ActivityCallback <methods>;
+}
