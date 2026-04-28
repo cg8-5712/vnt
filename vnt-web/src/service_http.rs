@@ -34,8 +34,8 @@ use vnt_core::tls::verifier::CertValidationMode;
 use vnt_core::tunnel_core::server::transport::config::ProtocolAddress;
 use vnt_core::utils::task_control::TaskGroupManager;
 
-const CONFIG_DIR: &str = "vnt_config";
-const CURRENT_CONFIG_RECORD: &str = "vnt_current_config.txt";
+const CONFIG_DIR_NAME: &str = "vnt_config";
+const CURRENT_CONFIG_RECORD_NAME: &str = "vnt_current_config.txt";
 
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
@@ -50,6 +50,8 @@ enum VntStatus {
 struct HttpAppState {
     task_group_manager: TaskGroupManager,
     inner: Arc<Mutex<HttpAppStateInner>>,
+    config_dir: PathBuf,
+    current_config_record: PathBuf,
 }
 
 #[derive(Default)]
@@ -339,12 +341,14 @@ pub async fn run_http_server(
     addr: SocketAddr,
     start_config_file_name: Option<PathBuf>,
 ) -> anyhow::Result<()> {
-    run_http_server_with_shutdown(addr, start_config_file_name, |_| {}, shutdown_signal()).await
+    run_http_server_with_shutdown(addr, start_config_file_name, None, |_| {}, shutdown_signal())
+        .await
 }
 
 pub async fn run_http_server_with_shutdown<S, R>(
     addr: SocketAddr,
     start_config_file_name: Option<PathBuf>,
+    data_dir: Option<PathBuf>,
     ready: R,
     shutdown: S,
 ) -> anyhow::Result<()>
@@ -352,17 +356,28 @@ where
     S: Future<Output = ()> + Send + 'static,
     R: FnOnce(SocketAddr) + Send + 'static,
 {
-    fs::create_dir_all(CONFIG_DIR)
+    let base_dir = data_dir.unwrap_or_default();
+    let config_dir = base_dir.join(CONFIG_DIR_NAME);
+    let current_config_record = base_dir.join(CURRENT_CONFIG_RECORD_NAME);
+
+    fs::create_dir_all(&config_dir)
         .await
         .context("Failed to create config directory")?;
 
     let state = HttpAppState {
         task_group_manager: TaskGroupManager::new(),
         inner: Arc::new(Default::default()),
+        config_dir,
+        current_config_record,
     };
 
     // 自动启动逻辑
-    let auto_start_file = determine_auto_start_file(start_config_file_name).await;
+    let auto_start_file = determine_auto_start_file(
+        start_config_file_name,
+        &state.config_dir,
+        &state.current_config_record,
+    )
+    .await;
 
     if let Some((file_name, path)) = auto_start_file {
         log::info!("Auto starting VNT with config: {:?}", path);
@@ -423,15 +438,17 @@ fn ensure_android_tun_supported() -> anyhow::Result<()> {
 /// 确定自动启动的配置文件
 async fn determine_auto_start_file(
     start_config_file_name: Option<PathBuf>,
+    config_dir: &Path,
+    current_config_record: &Path,
 ) -> Option<(String, PathBuf)> {
     let path = if let Some(name) = start_config_file_name {
         Some(name)
-    } else if Path::new(CURRENT_CONFIG_RECORD).exists() {
-        fs::read_to_string(CURRENT_CONFIG_RECORD)
+    } else if current_config_record.exists() {
+        fs::read_to_string(current_config_record)
             .await
             .ok()
             .filter(|content| !content.trim().is_empty())
-            .map(|content| Path::new(CONFIG_DIR).join(content.trim()))
+            .map(|content| config_dir.join(content.trim()))
     } else {
         None
     };
@@ -685,7 +702,7 @@ async fn start_vnt_network(
     });
 
     // 记录当前配置
-    if let Err(e) = fs::write(CURRENT_CONFIG_RECORD, &file_name).await {
+    if let Err(e) = fs::write(&state.current_config_record, &file_name).await {
         log::warn!("Failed to record current config: {}", e);
     }
     Ok(())
@@ -754,7 +771,7 @@ async fn start_vnt_handler(
         return Json(ApiResponse::error("Invalid file name"));
     }
 
-    let path = Path::new(CONFIG_DIR).join(&req.file_name);
+    let path = state.config_dir.join(&req.file_name);
     if !path.exists() {
         return Json(ApiResponse::error("Config file not found"));
     }
@@ -771,7 +788,7 @@ async fn stop_vnt_handler(State(state): State<HttpAppState>) -> Json<ApiResponse
     }
     state.task_group_manager.stop();
 
-    let _ = fs::write(CURRENT_CONFIG_RECORD, "").await;
+    let _ = fs::write(&state.current_config_record, "").await;
     Json(ApiResponse::success(()))
 }
 
@@ -783,7 +800,7 @@ async fn restart_vnt_handler(
         return Json(ApiResponse::error("Invalid file name"));
     }
 
-    let path = Path::new(CONFIG_DIR).join(&req.file_name);
+    let path = state.config_dir.join(&req.file_name);
     if !path.exists() {
         return Json(ApiResponse::error("Config file not found"));
     }
@@ -871,10 +888,10 @@ async fn get_info(State(state): State<HttpAppState>) -> Json<ApiResponse<HttpApp
     Json(ApiResponse::success(info))
 }
 
-async fn list_configs() -> Json<ApiResponse<Vec<ConfigSummary>>> {
+async fn list_configs(State(state): State<HttpAppState>) -> Json<ApiResponse<Vec<ConfigSummary>>> {
     let mut result = Vec::new();
 
-    let Ok(mut entries) = fs::read_dir(CONFIG_DIR).await else {
+    let Ok(mut entries) = fs::read_dir(&state.config_dir).await else {
         return Json(ApiResponse::success(result));
     };
 
@@ -914,7 +931,10 @@ async fn list_configs() -> Json<ApiResponse<Vec<ConfigSummary>>> {
     Json(ApiResponse::success(result))
 }
 
-async fn save_config(Json(req): Json<SaveConfigReq>) -> Json<ApiResponse<()>> {
+async fn save_config(
+    State(state): State<HttpAppState>,
+    Json(req): Json<SaveConfigReq>,
+) -> Json<ApiResponse<()>> {
     // 验证配置格式
     if let Err(e) = toml::from_str::<StartConfig>(&req.config) {
         log::warn!("Failed to parse configuration: {:?}", e);
@@ -936,7 +956,7 @@ async fn save_config(Json(req): Json<SaveConfigReq>) -> Json<ApiResponse<()>> {
         return Json(ApiResponse::error("Invalid file name"));
     }
 
-    let target_path = Path::new(CONFIG_DIR).join(&file_name);
+    let target_path = state.config_dir.join(&file_name);
 
     match fs::write(&target_path, &req.config).await {
         Ok(_) => Json(ApiResponse::success(())),
@@ -944,12 +964,15 @@ async fn save_config(Json(req): Json<SaveConfigReq>) -> Json<ApiResponse<()>> {
     }
 }
 
-async fn get_config(Query(req): Query<FileReq>) -> Json<ApiResponse<String>> {
+async fn get_config(
+    State(state): State<HttpAppState>,
+    Query(req): Query<FileReq>,
+) -> Json<ApiResponse<String>> {
     if !is_valid_file_name(&req.file_name) {
         return Json(ApiResponse::error("Invalid file name"));
     }
 
-    let path = Path::new(CONFIG_DIR).join(&req.file_name);
+    let path = state.config_dir.join(&req.file_name);
 
     if !path.exists() {
         return Json(ApiResponse::error("Config file not found"));
@@ -976,7 +999,7 @@ async fn delete_config(
         }
     }
 
-    let path = Path::new(CONFIG_DIR).join(&req.file_name);
+    let path = state.config_dir.join(&req.file_name);
 
     if !path.exists() {
         return Json(ApiResponse::error("Config file not found"));

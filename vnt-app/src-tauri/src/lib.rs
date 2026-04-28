@@ -228,7 +228,8 @@ fn run_app() -> anyhow::Result<()> {
                 app.manage(HttpServerShutdown(Mutex::new(Some(shutdown_tx))));
 
                 let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 19099);
-                let _server_addr = start_http_server(app_handle.clone(), shutdown_rx, bind_addr)?;
+                let data_dir = app.path().app_data_dir().ok();
+                let _server_addr = start_http_server(app_handle.clone(), shutdown_rx, bind_addr, data_dir)?;
 
                 create_main_window(app, "index.html".to_string())?;
                 Ok(())
@@ -271,7 +272,7 @@ fn run_app() -> anyhow::Result<()> {
                 app.manage(DesktopShellState::new(&app_handle));
                 create_tray(app)?;
                 let server_addr =
-                    start_http_server(app_handle.clone(), shutdown_rx, runtime_config.bind_addr)?;
+                    start_http_server(app_handle.clone(), shutdown_rx, runtime_config.bind_addr, None)?;
                 create_main_window(app, window_url(&runtime_config, server_addr))?;
 
                 Ok(())
@@ -334,6 +335,7 @@ fn start_http_server(
     app: AppHandle,
     shutdown_rx: oneshot::Receiver<()>,
     bind_addr: SocketAddr,
+    data_dir: Option<PathBuf>,
 ) -> anyhow::Result<SocketAddr> {
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
     let ready_tx = Arc::new(Mutex::new(Some(ready_tx)));
@@ -344,6 +346,7 @@ fn start_http_server(
         let result = vnt_web::run_http_server_with_shutdown(
             bind_addr,
             None,
+            data_dir,
             move |addr| {
                 if let Ok(mut sender) = ready_tx_for_server.lock() {
                     if let Some(sender) = sender.take() {
