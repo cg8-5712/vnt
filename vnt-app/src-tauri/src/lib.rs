@@ -208,59 +208,96 @@ pub fn run() {
 }
 
 fn run_app() -> anyhow::Result<()> {
-    let runtime_config = runtime_server_config()?;
-
-    tauri::Builder::default()
-        .plugin(tauri_plugin_localhost::Builder::new(runtime_config.webview_port).build())
-        .invoke_handler(tauri::generate_handler![
-            desktop_shell_info,
-            window_minimize,
-            window_is_maximized,
-            window_toggle_maximize,
-            window_start_dragging,
-            request_close_window,
-            dismiss_close_request,
-            resolve_close_request
-        ])
-        .setup(move |app| {
-            let app_handle = app.handle().clone();
-            let (shutdown_tx, shutdown_rx) = oneshot::channel();
-
-            app.manage(HttpServerShutdown(Mutex::new(Some(shutdown_tx))));
-            app.manage(DesktopShellState::new(&app_handle));
-            create_tray(app)?;
-            let server_addr =
-                start_http_server(app_handle.clone(), shutdown_rx, runtime_config.bind_addr)?;
-            create_main_window(app, window_url(&runtime_config, server_addr))?;
-
-            Ok(())
-        })
-        .on_window_event(|window, event| match event {
-            #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
-            tauri::WindowEvent::CloseRequested { api, .. } => {
-                api.prevent_close();
-
-                let Some(shell_state) = window.try_state::<DesktopShellState>() else {
-                    return;
-                };
-
-                if let Err(e) =
-                    handle_close_request(window, &window.app_handle(), shell_state.inner())
-                {
-                    log::error!("failed to handle close request: {e:?}");
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        tauri::Builder::default()
+            .invoke_handler(tauri::generate_handler![
+                desktop_shell_info,
+                window_minimize,
+                window_is_maximized,
+                window_toggle_maximize,
+                window_start_dragging,
+                request_close_window,
+                dismiss_close_request,
+                resolve_close_request
+            ])
+            .setup(move |app| {
+                let app_handle = app.handle().clone();
+                app.manage(DesktopShellState::new(&app_handle));
+                create_tray(app)?;
+                create_main_window(app, "index.html".to_string())?;
+                Ok(())
+            })
+            .on_window_event(|window, event| match event {
+                tauri::WindowEvent::Destroyed => {
+                    if let Some(shutdown) = window.try_state::<HttpServerShutdown>() {
+                        shutdown.shutdown();
+                    }
                 }
-            }
-            tauri::WindowEvent::Destroyed => {
-                if let Some(shutdown) = window.try_state::<HttpServerShutdown>() {
-                    shutdown.shutdown();
-                }
-            }
-            _ => {}
-        })
-        .run(tauri::generate_context!())
-        .context("failed to run Tauri application")?;
+                _ => {}
+            })
+            .run(tauri::generate_context!())
+            .context("failed to run Tauri application")?;
 
-    Ok(())
+        return Ok(());
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let runtime_config = runtime_server_config()?;
+
+        tauri::Builder::default()
+            .plugin(tauri_plugin_localhost::Builder::new(runtime_config.webview_port).build())
+            .invoke_handler(tauri::generate_handler![
+                desktop_shell_info,
+                window_minimize,
+                window_is_maximized,
+                window_toggle_maximize,
+                window_start_dragging,
+                request_close_window,
+                dismiss_close_request,
+                resolve_close_request
+            ])
+            .setup(move |app| {
+                let app_handle = app.handle().clone();
+                let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+                app.manage(HttpServerShutdown(Mutex::new(Some(shutdown_tx))));
+                app.manage(DesktopShellState::new(&app_handle));
+                create_tray(app)?;
+                let server_addr =
+                    start_http_server(app_handle.clone(), shutdown_rx, runtime_config.bind_addr)?;
+                create_main_window(app, window_url(&runtime_config, server_addr))?;
+
+                Ok(())
+            })
+            .on_window_event(|window, event| match event {
+                #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+
+                    let Some(shell_state) = window.try_state::<DesktopShellState>() else {
+                        return;
+                    };
+
+                    if let Err(e) =
+                        handle_close_request(window, &window.app_handle(), shell_state.inner())
+                    {
+                        log::error!("failed to handle close request: {e:?}");
+                    }
+                }
+                tauri::WindowEvent::Destroyed => {
+                    if let Some(shutdown) = window.try_state::<HttpServerShutdown>() {
+                        shutdown.shutdown();
+                    }
+                }
+                _ => {}
+            })
+            .run(tauri::generate_context!())
+            .context("failed to run Tauri application")?;
+
+        Ok(())
+    }
 }
 
 fn runtime_server_config() -> anyhow::Result<RuntimeServerConfig> {
@@ -334,37 +371,49 @@ fn start_http_server(
 }
 
 fn create_main_window(app: &mut tauri::App, url: String) -> anyhow::Result<()> {
-    app.add_capability(
-        CapabilityBuilder::new(REMOTE_CAPABILITY_ID)
-            .remote(url.clone())
-            .window(MAIN_WINDOW_LABEL),
-    )?;
-
-    let builder =
-        WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::External(url.parse()?));
-
-    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
-    let mut builder = builder.title("VNT2").visible(true);
-
     #[cfg(any(target_os = "android", target_os = "ios"))]
-    let mut builder = builder;
-
-    #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
     {
-        builder = builder
-            .inner_size(1180.0, 820.0)
-            .min_inner_size(960.0, 640.0)
-            .resizable(true);
+        let _ = url;
+        let builder = WebviewWindowBuilder::new(
+            app,
+            MAIN_WINDOW_LABEL,
+            WebviewUrl::App("index.html".into()),
+        );
+        builder.build().context("failed to create main window")?;
+        return Ok(());
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        builder = builder.decorations(false).shadow(true);
+        app.add_capability(
+            CapabilityBuilder::new(REMOTE_CAPABILITY_ID)
+                .remote(url.clone())
+                .window(MAIN_WINDOW_LABEL),
+        )?;
+
+        let builder =
+            WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::External(url.parse()?));
+
+        #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+        let mut builder = builder.title("VNT2").visible(true);
+
+        #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
+        {
+            builder = builder
+                .inner_size(1180.0, 820.0)
+                .min_inner_size(960.0, 640.0)
+                .resizable(true);
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            builder = builder.decorations(false).shadow(true);
+        }
+
+        builder.build().context("failed to create main window")?;
+
+        Ok(())
     }
-
-    builder.build().context("failed to create main window")?;
-
-    Ok(())
 }
 
 #[cfg(any(target_os = "windows", target_os = "linux", target_os = "macos"))]
