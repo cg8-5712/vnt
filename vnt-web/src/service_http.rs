@@ -357,6 +357,9 @@ where
     R: FnOnce(SocketAddr) + Send + 'static,
 {
     let base_dir = data_dir.unwrap_or_default();
+    if !base_dir.as_os_str().is_empty() {
+        vnt_core::utils::device_id::set_fallback_dir(base_dir.clone());
+    }
     let config_dir = base_dir.join(CONFIG_DIR_NAME);
     let current_config_record = base_dir.join(CURRENT_CONFIG_RECORD_NAME);
 
@@ -1012,6 +1015,11 @@ async fn delete_config(
 }
 
 fn convert_config(cfg: StartConfig) -> anyhow::Result<CoreConfig> {
+    #[cfg(target_os = "android")]
+    if !cfg.no_tun {
+        bail!("Android VpnService integration is not wired into vnt-app yet. Please set no_tun = true for now.");
+    }
+
     let server_addrs: Vec<ProtocolAddress> = cfg
         .server
         .iter()

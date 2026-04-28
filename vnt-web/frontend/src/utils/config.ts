@@ -29,6 +29,15 @@ const DEFAULT_CONFIG: VisualConfig = {
   tunnel_port: '',
 }
 
+function shouldPreferNoTun() {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  const { hostname, protocol } = window.location
+  return hostname === 'tauri.localhost' || !/^https?:$/.test(protocol)
+}
+
 function trimString(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -81,6 +90,7 @@ export function createDefaultVisualConfig(): VisualConfig {
     port_mapping: [...DEFAULT_CONFIG.port_mapping],
     udp_stun: [...DEFAULT_CONFIG.udp_stun],
     tcp_stun: [...DEFAULT_CONFIG.tcp_stun],
+    no_tun: shouldPreferNoTun(),
   }
 }
 
@@ -141,7 +151,7 @@ export function parseTomlConfig(content: string): VisualConfig {
     }),
     output: stringArray(document.output),
     no_nat: booleanValue(document.no_nat),
-    no_tun: booleanValue(document.no_tun),
+    no_tun: booleanValue(document.no_tun, shouldPreferNoTun()),
     mtu: optionalNumberString(document.mtu),
     port_mapping: stringArray(document.port_mapping),
     allow_mapping: booleanValue(document.allow_mapping),

@@ -253,6 +253,17 @@ async function cancelStart() {
 
 function setPageVisible(visible: boolean) {
   pageVisible.value = visible
+
+  if (!visible) {
+    return
+  }
+
+  if (info.value.status === 'starting') {
+    void pollStartStatus()
+    return
+  }
+
+  void fetchInfo()
 }
 
 async function bootstrap() {
