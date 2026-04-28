@@ -1,6 +1,9 @@
 import type { ApiResponse } from '@/types/vnt'
+import { hasTauriRuntime } from '@/utils/tauri'
 
-const apiBase = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')
+const apiBase = hasTauriRuntime()
+  ? 'http://localhost:19099'
+  : (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '')
 
 async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {

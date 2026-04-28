@@ -223,8 +223,13 @@ fn run_app() -> anyhow::Result<()> {
             ])
             .setup(move |app| {
                 let app_handle = app.handle().clone();
-                app.manage(DesktopShellState::new(&app_handle));
-                create_tray(app)?;
+                let (shutdown_tx, shutdown_rx) = oneshot::channel();
+
+                app.manage(HttpServerShutdown(Mutex::new(Some(shutdown_tx))));
+
+                let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 19099);
+                let _server_addr = start_http_server(app_handle.clone(), shutdown_rx, bind_addr)?;
+
                 create_main_window(app, "index.html".to_string())?;
                 Ok(())
             })
