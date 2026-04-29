@@ -9,3 +9,5 @@ data/config.toml
 vnt-app/src-tauri/logs/*
 .gradle-user/
 .gradle-home/
+vnt-app/src-tauri/gen/android/.gradle
+vnt-app/src-tauri/gen/android/.gradle-home

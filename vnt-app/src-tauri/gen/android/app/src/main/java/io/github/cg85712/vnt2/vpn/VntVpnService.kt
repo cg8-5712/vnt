@@ -8,6 +8,7 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.vnt.RegisterResult
 import com.vnt.VntManager
@@ -22,7 +23,9 @@ class VntVpnService : VpnService() {
   private var vpnInterface: ParcelFileDescriptor? = null
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    return when (intent?.action ?: ACTION_START) {
+    val action = intent?.action ?: ACTION_START
+    Log.i(TAG, "onStartCommand action=$action startId=$startId")
+    return when (action) {
       ACTION_STOP -> {
         stopSession("连接已停止", clearPersisted = true, stopService = true)
         START_NOT_STICKY
@@ -68,10 +71,12 @@ class VntVpnService : VpnService() {
     Thread {
       var localNetwork: VntNetwork? = null
       var localVpnInterface: ParcelFileDescriptor? = null
+      var nativeTunFd: Int? = null
       try {
         releaseHandles()
         ensureActive(generation)
 
+        Log.i(TAG, "initializing VNT runtime")
         VntVpnRuntime.appendLog("正在初始化 VNT")
         if (!VntManager.init()) {
           throw IllegalStateException("无法初始化 VNT")
@@ -82,16 +87,24 @@ class VntVpnService : VpnService() {
           ?: throw IllegalStateException("无法创建网络实例")
         ensureActive(generation)
 
+        Log.i(TAG, "registering VNT network for ${config.configName}")
         VntVpnRuntime.appendLog("正在注册网络")
         val registerResult = localNetwork.register()
         ensureActive(generation)
+        Log.i(TAG, "registered overlay address ${registerResult.ip}/${registerResult.prefixLen}")
         VntVpnRuntime.appendLog("已获取地址 ${registerResult.ip}/${registerResult.prefixLen}")
 
         localVpnInterface = establishVpn(config, registerResult)
         ensureActive(generation)
+        Log.i(TAG, "vpn interface established")
         VntVpnRuntime.appendLog("VPN 接口已建立")
 
-        localNetwork.startTun(localVpnInterface.fd)
+        val duplicatedTunFd = duplicateTunFdForNative(localVpnInterface)
+        nativeTunFd = duplicatedTunFd
+        Log.i(TAG, "starting native TUN pipeline with duplicated fd")
+        VntVpnRuntime.appendLog("正在启动 TUN 转发")
+        localNetwork.startTun(duplicatedTunFd)
+        nativeTunFd = null
         ensureActive(generation)
         val api = localNetwork.getApi()
 
@@ -100,16 +113,24 @@ class VntVpnService : VpnService() {
           vpnInterface = localVpnInterface
         }
 
+        Log.i(TAG, "vpn session is running")
         VntVpnRuntime.markRunning(localNetwork, api)
         updateNotification("VNT 已连接", "${registerResult.ip}/${registerResult.prefixLen}")
       } catch (exception: Exception) {
+        Log.e(TAG, "failed to start VPN session", exception)
+        nativeTunFd?.let { fd ->
+          closeDetachedFd(fd)
+          nativeTunFd = null
+        }
         try {
           localNetwork?.stop()
-        } catch (_: Exception) {
+        } catch (stopException: Exception) {
+          Log.w(TAG, "failed to stop local network after start failure", stopException)
         }
         try {
           localVpnInterface?.close()
-        } catch (_: Exception) {
+        } catch (closeException: Exception) {
+          Log.w(TAG, "failed to close vpn interface after start failure", closeException)
         }
         if (isActive(generation)) {
           VntManager.destroy()
@@ -180,6 +201,10 @@ class VntVpnService : VpnService() {
   }
 
   private fun stopSession(message: String?, clearPersisted: Boolean, stopService: Boolean) {
+    Log.i(
+      TAG,
+      "stopSession clearPersisted=$clearPersisted stopService=$stopService message=${message ?: "<none>"}",
+    )
     invalidateSessions()
     releaseHandles()
     VntManager.destroy()
@@ -195,17 +220,36 @@ class VntVpnService : VpnService() {
 
   private fun releaseHandles() {
     synchronized(sessionLock) {
+      Log.i(
+        TAG,
+        "releaseHandles networkPresent=${network != null} vpnInterfacePresent=${vpnInterface != null}",
+      )
       try {
         network?.stop()
-      } catch (_: Exception) {
+      } catch (stopException: Exception) {
+        Log.w(TAG, "failed to stop native network", stopException)
       }
       network = null
 
       try {
         vpnInterface?.close()
-      } catch (_: Exception) {
+      } catch (closeException: Exception) {
+        Log.w(TAG, "failed to close vpn interface", closeException)
       }
       vpnInterface = null
+    }
+  }
+
+  private fun duplicateTunFdForNative(vpnInterface: ParcelFileDescriptor): Int {
+    val duplicate = ParcelFileDescriptor.dup(vpnInterface.fileDescriptor)
+    return duplicate.detachFd()
+  }
+
+  private fun closeDetachedFd(fd: Int) {
+    try {
+      ParcelFileDescriptor.adoptFd(fd).close()
+    } catch (closeException: Exception) {
+      Log.w(TAG, "failed to close detached tun fd=$fd", closeException)
     }
   }
 
@@ -302,6 +346,7 @@ class VntVpnService : VpnService() {
   }
 
   companion object {
+    private const val TAG = "VntVpnService"
     private const val NOTIFICATION_CHANNEL_ID = "vnt_vpn_service"
     private const val NOTIFICATION_ID = 1001
 
