@@ -5,6 +5,9 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -147,11 +150,26 @@ class VntVpnService : VpnService() {
     config: VntLaunchConfig,
     registerResult: RegisterResult,
   ): ParcelFileDescriptor {
+    val underlyingNetworks = resolveUnderlyingNetworks()
     val builder = Builder()
       .setSession("VNT2")
       .setMtu(config.mtu)
       .setConfigureIntent(createOpenAppPendingIntent())
       .addAddress(registerResult.ip, registerResult.prefixLen)
+
+    try {
+      builder.addDisallowedApplication(packageName)
+      Log.i(TAG, "excluded VPN app process from VPN routing: $packageName")
+    } catch (exception: Exception) {
+      Log.w(TAG, "failed to exclude app from VPN routing", exception)
+    }
+
+    if (underlyingNetworks.isNotEmpty()) {
+      builder.setUnderlyingNetworks(underlyingNetworks)
+      Log.i(TAG, "attached ${underlyingNetworks.size} underlying network(s) to VPN session")
+    } else {
+      Log.w(TAG, "no underlying networks resolved for VPN session")
+    }
 
     val overlayRoute = "${networkAddress(registerResult.ip, registerResult.prefixLen)}/${registerResult.prefixLen}"
     val routeSet = linkedSetOf(overlayRoute)
@@ -176,6 +194,17 @@ class VntVpnService : VpnService() {
     }
 
     return builder.establish() ?: throw IllegalStateException("无法建立 VPN 接口")
+  }
+
+  private fun resolveUnderlyingNetworks(): Array<Network> {
+    val connectivityManager =
+      getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return emptyArray()
+    val networks = connectivityManager.allNetworks.filter { network ->
+      val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return@filter false
+      capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+        !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+    }
+    return networks.toTypedArray()
   }
 
   private fun createOpenAppPendingIntent(): PendingIntent {

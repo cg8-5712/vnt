@@ -367,11 +367,29 @@ onMounted(() => {
         </div>
 
         <div class="action-bar">
-          <button class="button ghost" :disabled="app.loading.value" @click="app.stop()">停止</button>
+          <button
+            class="button ghost"
+            :disabled="app.loading.value || (app.info.value.status !== 'running' && app.startStatus.value !== 'starting')"
+            @click="app.stop()"
+          >
+            停止
+          </button>
           <button class="button ghost" :disabled="loadingEditor" @click="removeCurrentConfig()">删除</button>
           <button class="button ghost" :disabled="loadingEditor" @click="saveCurrentConfig()">保存</button>
-          <button class="button ghost" :disabled="app.loading.value" @click="restartCurrent()">重启</button>
-          <button class="button primary" :disabled="app.loading.value" @click="startCurrent()">启动</button>
+          <button
+            class="button ghost"
+            :disabled="app.loading.value || app.startStatus.value === 'starting' || app.info.value.status !== 'running'"
+            @click="restartCurrent()"
+          >
+            重启
+          </button>
+          <button
+            class="button primary"
+            :disabled="app.loading.value || app.startStatus.value === 'starting' || app.info.value.status === 'running'"
+            @click="startCurrent()"
+          >
+            启动
+          </button>
         </div>
 
         <div class="mode-note">

@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.net.VpnService
 import android.os.Build
+import android.util.Log
 import androidx.activity.result.ActivityResult
 import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
@@ -24,16 +25,19 @@ class VntVpnPlugin(private val activity: Activity) : Plugin(activity) {
 
   @Command
   fun start(invoke: Invoke) {
+    Log.i(TAG, "start command received from frontend")
     handleStart(invoke, restart = false)
   }
 
   @Command
   fun restart(invoke: Invoke) {
+    Log.i(TAG, "restart command received from frontend")
     handleStart(invoke, restart = true)
   }
 
   @Command
   fun stop(invoke: Invoke) {
+    Log.i(TAG, "stop command received from frontend")
     val intent = Intent(activity, VntVpnService::class.java).setAction(VntVpnService.ACTION_STOP)
     activity.startService(intent)
     invoke.resolve()
@@ -108,6 +112,7 @@ class VntVpnPlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   private fun launchService(request: VntLaunchRequest, restart: Boolean) {
+    Log.i(TAG, "launching VPN service restart=$restart file=${request.fileName}")
     VntVpnRuntime.persistRequest(activity, request)
     val intent = VntVpnService.startIntent(activity, request, restart)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -116,5 +121,9 @@ class VntVpnPlugin(private val activity: Activity) : Plugin(activity) {
       @Suppress("DEPRECATION")
       activity.startService(intent)
     }
+  }
+
+  companion object {
+    private const val TAG = "VntVpnPlugin"
   }
 }

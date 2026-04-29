@@ -199,6 +199,14 @@ function ensureInfoPolling() {
 }
 
 async function start(fileName: string) {
+  if (loading.value || startStatus.value === 'starting') {
+    return
+  }
+  if (info.value.status === 'running') {
+    setNotice('info', '组网已经在运行，若要重新连接请使用“重启”。')
+    return
+  }
+
   loading.value = true
   try {
     await startVnt(fileName)
@@ -214,6 +222,13 @@ async function start(fileName: string) {
 }
 
 async function stop({ keepLog = false }: { keepLog?: boolean } = {}) {
+  if (loading.value) {
+    return
+  }
+  if (info.value.status !== 'running' && startStatus.value !== 'starting') {
+    return
+  }
+
   loading.value = true
   try {
     await stopVnt()
@@ -231,6 +246,14 @@ async function stop({ keepLog = false }: { keepLog?: boolean } = {}) {
 }
 
 async function restart(fileName: string) {
+  if (loading.value || startStatus.value === 'starting') {
+    return
+  }
+  if (info.value.status !== 'running') {
+    setNotice('info', '当前未连接，直接使用“启动”即可。')
+    return
+  }
+
   loading.value = true
   try {
     await restartVnt(fileName)
