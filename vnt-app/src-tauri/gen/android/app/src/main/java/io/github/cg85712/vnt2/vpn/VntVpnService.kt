@@ -197,14 +197,19 @@ class VntVpnService : VpnService() {
   }
 
   private fun resolveUnderlyingNetworks(): Array<Network> {
-    val connectivityManager =
-      getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return emptyArray()
-    val networks = connectivityManager.allNetworks.filter { network ->
-      val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return@filter false
-      capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-        !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+    return try {
+      val connectivityManager =
+        getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return emptyArray()
+      val networks = connectivityManager.allNetworks.filter { network ->
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return@filter false
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+          !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+      }
+      networks.toTypedArray()
+    } catch (exception: SecurityException) {
+      Log.w(TAG, "ACCESS_NETWORK_STATE is unavailable; skipping underlying network binding", exception)
+      emptyArray()
     }
-    return networks.toTypedArray()
   }
 
   private fun createOpenAppPendingIntent(): PendingIntent {
