@@ -68,7 +68,7 @@ async fn handle_outbound(
             entry.socket.clone()
         } else {
             // 创建真实 UDP socket
-            let sock = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
+            let sock = crate::socket_protect::bind_udp_any(dst).await?;
             sock.connect(dst).await?;
             let sock = Arc::new(sock);
             table.insert(
@@ -160,11 +160,16 @@ where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    let udp_socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
+    let addr_debug = format!("{addr:?}");
+    let mut resolved_addrs = tokio::net::lookup_host(addr).await?;
+    let target_addr = resolved_addrs
+        .next()
+        .context("no UDP target address resolved")?;
+    let udp_socket = crate::socket_protect::bind_udp_any(target_addr).await?;
     udp_socket
-        .connect(&addr)
+        .connect(target_addr)
         .await
-        .with_context(|| format!("error connecting to {:?}", addr))?;
+        .with_context(|| format!("error connecting to {}", addr_debug))?;
     let mut framed_read = FramedRead::new(recv_stream, LengthDelimitedCodec::new());
     let mut framed_write = FramedWrite::new(send_stream, LengthDelimitedCodec::new());
     let mut buf = vec![0u8; 65536];

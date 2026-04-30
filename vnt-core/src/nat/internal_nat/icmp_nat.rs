@@ -23,6 +23,7 @@ pub async fn start_icmp_nat(
         Some(socket2::Protocol::ICMPV4),
     )
     .context("new Socket RAW ICMPV4 failed")?;
+    crate::socket_protect::protect_socket2(&net_icmp_socket)?;
     let addr: SocketAddrV4 = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
     net_icmp_socket
         .bind(&socket2::SockAddr::from(addr))

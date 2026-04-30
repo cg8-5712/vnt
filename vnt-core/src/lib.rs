@@ -13,3 +13,4 @@ pub mod utils;
 pub mod api;
 pub(crate) mod enhanced_tunnel;
 pub mod port_mapping;
+pub mod socket_protect;

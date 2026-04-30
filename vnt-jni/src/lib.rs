@@ -1,7 +1,7 @@
 use anyhow::Context;
-use jni::objects::{JClass, JObject, JString};
+use jni::objects::{GlobalRef, JClass, JObject, JString, JValue};
 use jni::sys::{jboolean, jint, jlong, jstring};
-use jni::JNIEnv;
+use jni::{JNIEnv, JavaVM};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
@@ -19,6 +19,7 @@ use vnt_core::utils::task_control::TaskGroupManager;
 /// 全局状态管理
 struct GlobalState {
     /// Tokio运行时（Arc包装以便多线程访问）
+    java_vm: Arc<JavaVM>,
     runtime: Arc<Runtime>,
     /// 网络管理器实例
     network_managers: HashMap<i64, Arc<Mutex<Option<NetworkManager>>>>,
@@ -26,17 +27,20 @@ struct GlobalState {
     vnt_apis: HashMap<i64, VntApi>,
     /// 任务组管理器
     task_group_managers: HashMap<i64, TaskGroupManager>,
+    socket_protector: Option<GlobalRef>,
     /// 下一个实例ID
     next_id: i64,
 }
 
 impl GlobalState {
-    fn new() -> anyhow::Result<Self> {
+    fn new(env: &JNIEnv) -> anyhow::Result<Self> {
         Ok(Self {
+            java_vm: Arc::new(env.get_java_vm()?),
             runtime: Arc::new(Runtime::new()?),
             network_managers: HashMap::new(),
             vnt_apis: HashMap::new(),
             task_group_managers: HashMap::new(),
+            socket_protector: None,
             next_id: 1,
         })
     }
@@ -44,6 +48,37 @@ impl GlobalState {
 
 lazy_static::lazy_static! {
     static ref GLOBAL_STATE: Mutex<Option<GlobalState>> = Mutex::new(None);
+}
+
+fn protect_socket_via_vpn_service(fd: i32) -> anyhow::Result<()> {
+    let (java_vm, protector) = {
+        let state = GLOBAL_STATE.lock();
+        let Some(state) = state.as_ref() else {
+            return Ok(());
+        };
+        let Some(protector) = state.socket_protector.clone() else {
+            return Ok(());
+        };
+        (state.java_vm.clone(), protector)
+    };
+
+    let mut env = java_vm.attach_current_thread()?;
+    let protected = env
+        .call_method(protector.as_obj(), "protect", "(I)Z", &[JValue::Int(fd)])
+        .context("call VpnService.protect")?
+        .z()
+        .context("read VpnService.protect result")?;
+    if protected {
+        Ok(())
+    } else {
+        anyhow::bail!("VpnService.protect({fd}) returned false");
+    }
+}
+
+fn install_socket_protector() {
+    vnt_core::socket_protect::set_socket_protector(Some(Arc::new(
+        protect_socket_via_vpn_service,
+    )));
 }
 
 /// 初始化JNI模块
@@ -57,9 +92,10 @@ pub extern "system" fn Java_com_vnt_VntManager_nativeInit(
         return 1; // 已经初始化
     }
 
-    match GlobalState::new() {
+    match GlobalState::new(&env) {
         Ok(global_state) => {
             *state = Some(global_state);
+            install_socket_protector();
             1
         }
         Err(e) => {
@@ -74,9 +110,40 @@ pub extern "system" fn Java_com_vnt_VntManager_nativeInit(
 pub extern "system" fn Java_com_vnt_VntManager_nativeDestroy(_env: JNIEnv, _class: JClass) {
     let mut state = GLOBAL_STATE.lock();
     *state = None;
+    vnt_core::socket_protect::set_socket_protector(None);
 }
 
 /// 创建网络实例
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_vnt_VntManager_nativeSetSocketProtector<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    protector: JObject<'local>,
+) {
+    let mut state = GLOBAL_STATE.lock();
+    let Some(state) = state.as_mut() else {
+        if protector.is_null() {
+            return;
+        }
+        let _ = env.throw("VNT not initialized");
+        return;
+    };
+
+    if protector.is_null() {
+        state.socket_protector = None;
+        return;
+    }
+
+    match env.new_global_ref(protector) {
+        Ok(global_ref) => {
+            state.socket_protector = Some(global_ref);
+        }
+        Err(error) => {
+            let _ = env.throw(format!("Failed to set socket protector: {:?}", error));
+        }
+    }
+}
+
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_vnt_VntManager_nativeCreateNetwork<'local>(
     mut env: JNIEnv<'local>,

@@ -1,4 +1,5 @@
 use crate::protocol::transmission::TransmissionBytes;
+use crate::socket_protect;
 use crate::tunnel_core::server::transport::config::ConnectConfig;
 use anyhow::{Context, bail};
 use bytes::Bytes;
@@ -71,12 +72,9 @@ pub async fn connect_wss(config: &ConnectConfig) -> anyhow::Result<WssStream> {
     let rustls_config = config.cert_mode.create_tls_client_config()?;
     let connector = TlsConnector::from(Arc::new(rustls_config));
 
-    let tcp_stream = TcpStream::connect(server_addr)
+    let tcp_stream = socket_protect::connect_tcp(server_addr)
         .await
         .context("Failed to establish underlying TCP connection")?;
-    if let Err(e) = tcp_stream.set_nodelay(true) {
-        log::error!("Failed to set TCP_NODELAY: {}", e);
-    }
     let url = format!("wss://{}", server_name);
 
     let dns_name = server_name

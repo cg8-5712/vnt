@@ -1,5 +1,7 @@
 package com.vnt;
 
+import android.net.VpnService;
+
 public final class VntManager {
   static {
     System.loadLibrary("vnt_app_lib");
@@ -23,9 +25,19 @@ public final class VntManager {
     return new VntNetwork(handle);
   }
 
+  public static void setSocketProtector(VpnService vpnService) {
+    nativeSetSocketProtector(vpnService);
+  }
+
+  public static void clearSocketProtector() {
+    nativeSetSocketProtector(null);
+  }
+
   private static native boolean nativeInit();
 
   private static native void nativeDestroy();
 
   private static native long nativeCreateNetwork(String configJson);
+
+  private static native void nativeSetSocketProtector(Object protector);
 }

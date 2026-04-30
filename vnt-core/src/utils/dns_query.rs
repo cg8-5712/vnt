@@ -207,6 +207,7 @@ fn bind_udp(
         "[::]:0".parse().expect("valid IPv6 socket address literal")
     };
     let socket = rust_p2p_core::socket::bind_udp(addr, default_interface.as_ref())?;
+    crate::socket_protect::protect_socket2(&socket).map_err(io::Error::other)?;
     UdpSocket::from_std(socket.into())
 }
 

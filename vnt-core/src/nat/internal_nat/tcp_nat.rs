@@ -1,4 +1,5 @@
 use crate::context::SharedNetworkAddr;
+use crate::socket_protect;
 use crate::utils::task_control::TaskGroup;
 use anyhow::Context;
 use std::fmt::Debug;
@@ -6,7 +7,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use tcp_ip::IpStack;
 use tcp_ip::tcp::TcpListener;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::net::{TcpStream, ToSocketAddrs};
+use tokio::net::ToSocketAddrs;
 
 pub async fn start_tcp_nat(
     task_group: &TaskGroup,
@@ -55,7 +56,7 @@ async fn stream_task(
     mut inner_stream: tcp_ip::tcp::TcpStream,
     addr: SocketAddr,
 ) -> anyhow::Result<()> {
-    let mut tokio_stream = TcpStream::connect(addr).await?;
+    let mut tokio_stream = socket_protect::connect_tcp(addr).await?;
     tokio::io::copy_bidirectional(&mut inner_stream, &mut tokio_stream).await?;
     Ok(())
 }
@@ -69,9 +70,10 @@ where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    let mut tokio_stream = TcpStream::connect(&addr)
+    let addr_debug = format!("{addr:?}");
+    let mut tokio_stream = socket_protect::connect_tcp(addr)
         .await
-        .with_context(|| format!("error connecting to {:?}", addr))?;
+        .with_context(|| format!("error connecting to {}", addr_debug))?;
     let (mut tcp_r, mut tcp_w) = tokio_stream.split();
     tokio::select! {
         _ = tokio::io::copy(&mut recv_stream, &mut tcp_w) => {},

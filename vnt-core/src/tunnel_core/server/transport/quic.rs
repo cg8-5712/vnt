@@ -8,6 +8,11 @@ use quinn::{ClientConfig, Endpoint, RecvStream, SendStream};
 use std::sync::Arc;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
+#[cfg(target_os = "android")]
+use crate::socket_protect;
+#[cfg(target_os = "android")]
+use quinn::{EndpointConfig, default_runtime};
+
 #[derive(Default)]
 pub struct QuicTransport {
     framed: Option<(
@@ -56,11 +61,11 @@ pub async fn connect_quic(
     let server_addr = config.server_addr();
     let server_name = config.server_name();
     let quic_config = create_client_config(&config.cert_mode)?;
-    let mut endpoint = match Endpoint::client((std::net::Ipv6Addr::UNSPECIFIED, 0).into()) {
+    let mut endpoint = match create_client_endpoint((std::net::Ipv6Addr::UNSPECIFIED, 0).into()) {
         Ok(endpoint) => endpoint,
         Err(e) => {
             log::warn!("Failed to create QUIC endpoint: {}", e);
-            Endpoint::client((std::net::Ipv4Addr::UNSPECIFIED, 0).into())
+            create_client_endpoint((std::net::Ipv4Addr::UNSPECIFIED, 0).into())
                 .context("Failed to create QUIC endpoint")?
         }
     };
@@ -87,4 +92,19 @@ fn create_client_config(cert_mode: &CertValidationMode) -> anyhow::Result<Client
     ));
 
     Ok(client_config)
+}
+
+fn create_client_endpoint(local_addr: std::net::SocketAddr) -> std::io::Result<Endpoint> {
+    #[cfg(target_os = "android")]
+    {
+        let runtime =
+            default_runtime().ok_or_else(|| std::io::Error::other("no async runtime found"))?;
+        let socket = socket_protect::bind_std_udp_socket(local_addr, local_addr.is_ipv6())?;
+        return Endpoint::new(EndpointConfig::default(), None, socket, runtime);
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        Endpoint::client(local_addr)
+    }
 }

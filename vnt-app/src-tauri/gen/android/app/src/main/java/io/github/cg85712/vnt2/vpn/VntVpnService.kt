@@ -11,9 +11,11 @@ import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.vnt.RegisterResult
+import com.vnt.VntApi
 import com.vnt.VntManager
 import com.vnt.VntNetwork
 import io.github.cg85712.vnt2.MainActivity
@@ -84,6 +86,7 @@ class VntVpnService : VpnService() {
         if (!VntManager.init()) {
           throw IllegalStateException("无法初始化 VNT")
         }
+        VntManager.setSocketProtector(this)
         ensureActive(generation)
 
         localNetwork = VntManager.createNetwork(request.configJson)
@@ -110,6 +113,7 @@ class VntVpnService : VpnService() {
         nativeTunFd = null
         ensureActive(generation)
         val api = localNetwork.getApi()
+        waitForStableServerConnection(api, generation)
 
         synchronized(sessionLock) {
           network = localNetwork
@@ -118,6 +122,7 @@ class VntVpnService : VpnService() {
 
         Log.i(TAG, "vpn session is running")
         VntVpnRuntime.markRunning(localNetwork, api)
+        startConnectionMonitor(api, generation)
         updateNotification("VNT 已连接", "${registerResult.ip}/${registerResult.prefixLen}")
       } catch (exception: Exception) {
         Log.e(TAG, "failed to start VPN session", exception)
@@ -136,7 +141,7 @@ class VntVpnService : VpnService() {
           Log.w(TAG, "failed to close vpn interface after start failure", closeException)
         }
         if (isActive(generation)) {
-          VntManager.destroy()
+          destroyRuntime()
           VntVpnRuntime.markStartFailed("启动失败: ${exception.message ?: exception.javaClass.simpleName}")
           VntVpnRuntime.clearPersistedRequest(this)
           stopForegroundCompat()
@@ -241,7 +246,7 @@ class VntVpnService : VpnService() {
     )
     invalidateSessions()
     releaseHandles()
-    VntManager.destroy()
+    destroyRuntime()
     VntVpnRuntime.markStopped(message)
     if (clearPersisted) {
       VntVpnRuntime.clearPersistedRequest(this)
@@ -271,6 +276,98 @@ class VntVpnService : VpnService() {
         Log.w(TAG, "failed to close vpn interface", closeException)
       }
       vpnInterface = null
+    }
+  }
+
+  private fun destroyRuntime() {
+    try {
+      VntManager.clearSocketProtector()
+    } catch (exception: Exception) {
+      Log.w(TAG, "failed to clear socket protector", exception)
+    }
+    try {
+      VntManager.destroy()
+    } catch (exception: Exception) {
+      Log.w(TAG, "failed to destroy VNT runtime", exception)
+    }
+  }
+
+  private fun waitForStableServerConnection(api: VntApi, generation: Int) {
+    VntVpnRuntime.appendLog("Waiting for server connection to stabilize")
+    val startupDeadline = SystemClock.elapsedRealtime() + STARTUP_CONNECT_TIMEOUT_MS
+    var connectedSince = 0L
+
+    while (SystemClock.elapsedRealtime() < startupDeadline) {
+      ensureActive(generation)
+      val connectedServerCount = connectedServerCount(api)
+      val now = SystemClock.elapsedRealtime()
+      if (connectedServerCount > 0) {
+        if (connectedSince == 0L) {
+          connectedSince = now
+          Log.i(TAG, "server connection detected during startup")
+          VntVpnRuntime.appendLog("Server connected, validating stability")
+        }
+        if (now - connectedSince >= STARTUP_STABLE_WINDOW_MS) {
+          Log.i(TAG, "server connection is stable")
+          return
+        }
+      } else if (connectedSince != 0L) {
+        connectedSince = 0L
+        Log.w(TAG, "server disconnected before startup stabilized")
+        VntVpnRuntime.appendLog("Server disconnected during startup, waiting to recover")
+      }
+
+      if (!sleepQuietly(STARTUP_POLL_INTERVAL_MS)) {
+        throw IllegalStateException("Startup interrupted")
+      }
+    }
+
+    throw IllegalStateException("Server connection was not stable after startup")
+  }
+
+  private fun startConnectionMonitor(api: VntApi, generation: Int) {
+    Thread {
+      var disconnectedSince = 0L
+      while (isActive(generation)) {
+        val connectedServerCount = connectedServerCount(api)
+        val now = SystemClock.elapsedRealtime()
+        if (connectedServerCount > 0) {
+          disconnectedSince = 0L
+        } else if (disconnectedSince == 0L) {
+          disconnectedSince = now
+          Log.w(TAG, "all VPN server connections are down, waiting for recovery")
+        } else if (now - disconnectedSince >= RUNTIME_DISCONNECT_GRACE_MS) {
+          Log.e(TAG, "VPN server connection lost, stopping session")
+          stopSession(
+            "Server connection lost",
+            clearPersisted = true,
+            stopService = true,
+          )
+          return@Thread
+        }
+
+        if (!sleepQuietly(RUNTIME_MONITOR_POLL_INTERVAL_MS)) {
+          return@Thread
+        }
+      }
+    }.start()
+  }
+
+  private fun connectedServerCount(api: VntApi): Int {
+    return try {
+      api.getServerList().count { server -> server.isConnected() }
+    } catch (_: Exception) {
+      0
+    }
+  }
+
+  private fun sleepQuietly(delayMillis: Long): Boolean {
+    return try {
+      Thread.sleep(delayMillis)
+      true
+    } catch (_: InterruptedException) {
+      Thread.currentThread().interrupt()
+      false
     }
   }
 
@@ -383,6 +480,11 @@ class VntVpnService : VpnService() {
     private const val TAG = "VntVpnService"
     private const val NOTIFICATION_CHANNEL_ID = "vnt_vpn_service"
     private const val NOTIFICATION_ID = 1001
+    private const val STARTUP_CONNECT_TIMEOUT_MS = 20_000L
+    private const val STARTUP_STABLE_WINDOW_MS = 1_500L
+    private const val STARTUP_POLL_INTERVAL_MS = 250L
+    private const val RUNTIME_DISCONNECT_GRACE_MS = 5_000L
+    private const val RUNTIME_MONITOR_POLL_INTERVAL_MS = 1_000L
 
     const val ACTION_START = "io.github.cg85712.vnt2.vpn.START"
     const val ACTION_RESTART = "io.github.cg85712.vnt2.vpn.RESTART"
