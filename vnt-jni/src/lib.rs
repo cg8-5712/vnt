@@ -632,6 +632,7 @@ pub extern "system" fn Java_com_vnt_VntApi_nativeGetServerList<'local>(
                     "rtt": server.rtt,
                     "data_version": server.data_version,
                     "server_version": server.server_version,
+                    "last_error": server.last_error,
                 })
             })
             .collect();

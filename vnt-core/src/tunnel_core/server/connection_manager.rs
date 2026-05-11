@@ -178,6 +178,7 @@ impl ServerTurnManager {
                         Ok(msg) => msg,
                         Err(e) => {
                             log::error!("连接服务器失败:{e:?}");
+                            data_handler.set_last_error(format!("reconnect failed: {e:?}"));
                             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                             continue;
                         }
@@ -198,10 +199,12 @@ impl ServerTurnManager {
                         }
                         ResponseMessage::Error(e) => {
                             log::error!("注册失败 {e:?}");
+                            data_handler.set_last_error(format!("register failed: {e:?}"));
                             break;
                         }
                         _ => {
                             log::error!("错误的注册消息");
+                            data_handler.set_last_error("unexpected register response".to_string());
                             break;
                         }
                     }
@@ -211,6 +214,7 @@ impl ServerTurnManager {
 
                 if let Err(e) = self.data_handle_loop(&mut receiver, &data_handler).await {
                     log::error!("Error on data_handle_loop: {:?}", e);
+                    data_handler.set_last_error(format!("data loop failed: {e:?}"));
                 }
                 already_connected = false;
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;

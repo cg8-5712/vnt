@@ -69,7 +69,8 @@ public final class VntApi {
                 object.getBoolean("connected"),
                 object.isNull("rtt") ? null : object.getInt("rtt"),
                 object.getLong("data_version"),
-                object.isNull("server_version") ? null : object.getString("server_version")));
+                object.isNull("server_version") ? null : object.getString("server_version"),
+                object.isNull("last_error") ? null : object.getString("last_error")));
       }
       return items;
     } catch (Exception exception) {
@@ -262,6 +263,7 @@ public final class VntApi {
     private final Integer rtt;
     private final long dataVersion;
     private final String serverVersion;
+    private final String lastError;
 
     public ServerInfo(
         int serverId,
@@ -269,13 +271,15 @@ public final class VntApi {
         boolean connected,
         Integer rtt,
         long dataVersion,
-        String serverVersion) {
+        String serverVersion,
+        String lastError) {
       this.serverId = serverId;
       this.serverAddr = serverAddr;
       this.connected = connected;
       this.rtt = rtt;
       this.dataVersion = dataVersion;
       this.serverVersion = serverVersion;
+      this.lastError = lastError;
     }
 
     public int getServerId() {
@@ -300,6 +304,10 @@ public final class VntApi {
 
     public String getServerVersion() {
       return serverVersion;
+    }
+
+    public String getLastError() {
+      return lastError;
     }
   }
 

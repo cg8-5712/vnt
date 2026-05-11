@@ -319,6 +319,7 @@ impl ServerTurnInboundHandler {
         self.server_info
             .set_last_connected_time(self.server_id, Some(crate::utils::time::now_ts_ms()));
         self.server_info.set_disconnected_time(self.server_id, None);
+        self.server_info.set_server_last_error(self.server_id, None);
     }
     pub fn set_server_version(&self, version: String) {
         self.server_info.set_server_version(self.server_id, version);
@@ -328,5 +329,9 @@ impl ServerTurnInboundHandler {
             self.server_info
                 .set_disconnected_time(self.server_id, Some(crate::utils::time::now_ts_ms()));
         }
+    }
+    pub fn set_last_error(&self, error: String) {
+        self.server_info
+            .set_server_last_error(self.server_id, Some(error));
     }
 }

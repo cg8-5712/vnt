@@ -397,6 +397,7 @@ pub struct ServerNodeInfo {
     pub last_connected_time: Option<i64>,
     pub disconnected_time: Option<i64>,
     pub server_version: Option<String>,
+    pub last_error: Option<String>,
 }
 impl ServerInfoCollection {
     pub fn server_client_ip_map(&self) -> HashMap<u32, (Vec<Ipv4Addr>, u32)> {
@@ -593,6 +594,11 @@ impl ServerInfoCollection {
             v.server_version = Some(version);
         }
     }
+    pub fn set_server_last_error(&self, server_id: u32, error: Option<String>) {
+        if let Some(v) = self.server_node_map.write().get_mut(&server_id) {
+            v.last_error = error;
+        }
+    }
     pub fn get_server_rtt(&self, ip: &Ipv4Addr) -> Option<u32> {
         let server_node_map_guard = self.server_node_map.read();
         for (_, server_node) in server_node_map_guard.iter() {
@@ -623,6 +629,7 @@ impl ServerInfoCollection {
             server_node.client_map.clear();
             server_node.last_connected_time = None;
             server_node.disconnected_time = None;
+            server_node.last_error = None;
         }
     }
 }

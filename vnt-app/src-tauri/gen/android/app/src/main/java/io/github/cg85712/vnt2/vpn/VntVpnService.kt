@@ -401,6 +401,10 @@ class VntVpnService : VpnService() {
               append(" version=")
               append(it)
             }
+            server.lastError?.let {
+              append(" error=")
+              append(it)
+            }
           }
         }
       }
