@@ -23,11 +23,13 @@ data class VntLaunchConfig(
   val deviceId: String,
   val deviceName: String,
   val networkCode: String,
+  val fixedIp: String?,
   val mtu: Int,
   val fec: Boolean,
   val compress: Boolean,
   val encrypt: Boolean,
   val rtx: Boolean,
+  val servers: List<String>,
   val outputRoutes: List<String>,
 )
 
@@ -130,6 +132,14 @@ object VntVpnRuntime {
 
   fun parseLaunchConfig(request: VntLaunchRequest): VntLaunchConfig {
     val json = JSONObject(request.configJson)
+    val serverArray = json.optJSONArray("server")
+    val servers = mutableListOf<String>()
+    if (serverArray != null) {
+      for (index in 0 until serverArray.length()) {
+        servers.add(serverArray.optString(index))
+      }
+    }
+
     val outputArray = json.optJSONArray("output")
     val outputRoutes = mutableListOf<String>()
     if (outputArray != null) {
@@ -148,11 +158,13 @@ object VntVpnRuntime {
       deviceId = json.optString("device_id", ""),
       deviceName = deviceName,
       networkCode = json.optString("network_code", ""),
+      fixedIp = json.optString("ip", "").trim().takeIf { it.isNotEmpty() },
       mtu = if (configuredMtu > 0) configuredMtu else DEFAULT_MTU,
       fec = json.optBoolean("fec", false),
       compress = json.optBoolean("compress", false),
       encrypt = json.optString("password", "").isNotBlank(),
       rtx = json.optBoolean("rtx", false),
+      servers = servers,
       outputRoutes = outputRoutes,
     )
   }

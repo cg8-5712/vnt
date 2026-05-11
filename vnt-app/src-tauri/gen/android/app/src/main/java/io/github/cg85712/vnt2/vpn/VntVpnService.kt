@@ -20,12 +20,25 @@ import com.vnt.VntManager
 import com.vnt.VntNetwork
 import io.github.cg85712.vnt2.MainActivity
 import io.github.cg85712.vnt2.R
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 class VntVpnService : VpnService() {
   private val sessionLock = Any()
+  private val serverStatusExecutor = Executors.newSingleThreadExecutor { runnable ->
+    Thread(runnable, "VntServerStatus").apply { isDaemon = true }
+  }
   private var sessionGeneration: Int = 0
   private var network: VntNetwork? = null
   private var vpnInterface: ParcelFileDescriptor? = null
+
+  private data class ServerStatusSnapshot(
+    val connectedCount: Int,
+    val summary: String,
+  )
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val action = intent?.action ?: ACTION_START
@@ -65,6 +78,7 @@ class VntVpnService : VpnService() {
 
   override fun onDestroy() {
     stopSession(message = null, clearPersisted = false, stopService = false)
+    serverStatusExecutor.shutdownNow()
     super.onDestroy()
   }
 
@@ -82,6 +96,9 @@ class VntVpnService : VpnService() {
         ensureActive(generation)
 
         Log.i(TAG, "initializing VNT runtime")
+        val configSummary = describeLaunchConfig(config)
+        Log.i(TAG, configSummary)
+        VntVpnRuntime.appendLog(configSummary)
         VntVpnRuntime.appendLog("正在初始化 VNT")
         if (!VntManager.init()) {
           throw IllegalStateException("无法初始化 VNT")
@@ -296,11 +313,21 @@ class VntVpnService : VpnService() {
     VntVpnRuntime.appendLog("Waiting for server connection to stabilize")
     val startupDeadline = SystemClock.elapsedRealtime() + STARTUP_CONNECT_TIMEOUT_MS
     var connectedSince = 0L
+    var lastSnapshot = ""
+    var lastLogAt = 0L
 
     while (SystemClock.elapsedRealtime() < startupDeadline) {
       ensureActive(generation)
-      val connectedServerCount = connectedServerCount(api)
+      val serverStatus = queryServerStatus(api, SERVER_STATUS_QUERY_TIMEOUT_MS)
       val now = SystemClock.elapsedRealtime()
+      if (serverStatus.summary != lastSnapshot || now - lastLogAt >= STARTUP_STATUS_LOG_INTERVAL_MS) {
+        lastSnapshot = serverStatus.summary
+        lastLogAt = now
+        Log.i(TAG, "startup server status: ${serverStatus.summary}")
+        VntVpnRuntime.appendLog("Server status: ${serverStatus.summary}")
+      }
+
+      val connectedServerCount = serverStatus.connectedCount
       if (connectedServerCount > 0) {
         if (connectedSince == 0L) {
           connectedSince = now
@@ -322,24 +349,28 @@ class VntVpnService : VpnService() {
       }
     }
 
-    throw IllegalStateException("Server connection was not stable after startup")
+    throw IllegalStateException(
+      "Server connection was not stable after ${STARTUP_CONNECT_TIMEOUT_MS / 1000}s; last status: " +
+        lastSnapshot.ifBlank { "unknown" },
+    )
   }
 
   private fun startConnectionMonitor(api: VntApi, generation: Int) {
     Thread {
       var disconnectedSince = 0L
       while (isActive(generation)) {
-        val connectedServerCount = connectedServerCount(api)
+        val serverStatus = queryServerStatus(api, SERVER_STATUS_QUERY_TIMEOUT_MS)
+        val connectedServerCount = serverStatus.connectedCount
         val now = SystemClock.elapsedRealtime()
         if (connectedServerCount > 0) {
           disconnectedSince = 0L
         } else if (disconnectedSince == 0L) {
           disconnectedSince = now
-          Log.w(TAG, "all VPN server connections are down, waiting for recovery")
+          Log.w(TAG, "all VPN server connections are down, waiting for recovery: ${serverStatus.summary}")
         } else if (now - disconnectedSince >= RUNTIME_DISCONNECT_GRACE_MS) {
-          Log.e(TAG, "VPN server connection lost, stopping session")
+          Log.e(TAG, "VPN server connection lost, stopping session: ${serverStatus.summary}")
           stopSession(
-            "Server connection lost",
+            "Server connection lost: ${serverStatus.summary}",
             clearPersisted = true,
             stopService = true,
           )
@@ -353,12 +384,50 @@ class VntVpnService : VpnService() {
     }.start()
   }
 
-  private fun connectedServerCount(api: VntApi): Int {
+  private fun queryServerStatus(api: VntApi, timeoutMillis: Long): ServerStatusSnapshot {
+    val future = serverStatusExecutor.submit(Callable {
+      val servers = api.getServerList()
+      val summary = if (servers.isEmpty()) {
+        "no servers returned"
+      } else {
+        servers.joinToString("; ") { server ->
+          buildString {
+            append(server.serverAddr)
+            append(" connected=")
+            append(server.isConnected())
+            append(" rtt=")
+            append(server.rtt?.toString() ?: "-")
+            server.serverVersion?.let {
+              append(" version=")
+              append(it)
+            }
+          }
+        }
+      }
+      ServerStatusSnapshot(
+        connectedCount = servers.count { server -> server.isConnected() },
+        summary = summary,
+      )
+    })
+
     return try {
-      api.getServerList().count { server -> server.isConnected() }
-    } catch (_: Exception) {
-      0
+      future.get(timeoutMillis, TimeUnit.MILLISECONDS)
+    } catch (exception: TimeoutException) {
+      future.cancel(true)
+      ServerStatusSnapshot(0, "getServerList timed out after ${timeoutMillis}ms")
+    } catch (exception: ExecutionException) {
+      ServerStatusSnapshot(0, "getServerList failed: ${exception.cause?.message ?: exception.message}")
+    } catch (exception: Exception) {
+      ServerStatusSnapshot(0, "getServerList failed: ${exception.message ?: exception.javaClass.simpleName}")
     }
+  }
+
+  private fun describeLaunchConfig(config: VntLaunchConfig): String {
+    val deviceId = config.deviceId.ifBlank { "auto" }
+    val fixedIp = config.fixedIp ?: "auto"
+    val servers = if (config.servers.isEmpty()) "none" else config.servers.joinToString(",")
+    val routes = if (config.outputRoutes.isEmpty()) "none" else config.outputRoutes.joinToString(",")
+    return "VPN config: name=${config.configName}, device=${config.deviceName}, device_id=$deviceId, fixed_ip=$fixedIp, mtu=${config.mtu}, servers=$servers, output=$routes"
   }
 
   private fun sleepQuietly(delayMillis: Long): Boolean {
@@ -483,6 +552,8 @@ class VntVpnService : VpnService() {
     private const val STARTUP_CONNECT_TIMEOUT_MS = 20_000L
     private const val STARTUP_STABLE_WINDOW_MS = 1_500L
     private const val STARTUP_POLL_INTERVAL_MS = 250L
+    private const val STARTUP_STATUS_LOG_INTERVAL_MS = 2_000L
+    private const val SERVER_STATUS_QUERY_TIMEOUT_MS = 1_000L
     private const val RUNTIME_DISCONNECT_GRACE_MS = 5_000L
     private const val RUNTIME_MONITOR_POLL_INTERVAL_MS = 1_000L
 
